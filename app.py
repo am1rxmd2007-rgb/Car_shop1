@@ -2,22 +2,30 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
-import streamlit.components.v1 as components
+from PIL import Image
+
+# بررسی نصب بودن کتابخانه بارکدخوان
+try:
+    from pyzbar.pyzbar import decode
+    HAS_PYZBAR = True
+except ImportError:
+    HAS_PYZBAR = False
 
 # ==========================================
-# تنظیمات صفحه و راست‌چین کردن (RTL)
+# تنظیمات صفحه (عریض برای دسکتاپ) و CSS ایمن
 # ==========================================
-st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="centered")
+st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="wide")
 
+# CSS ایمن: فقط متن‌ها راست‌چین می‌شوند تا ساختار برنامه به هم نریزد
 st.markdown("""
 <style>
-    .stApp, .stMarkdown, p, input, select, label, h1, h2, h3, h4, h5, h6, span {
+    .stMarkdown, p, h1, h2, h3, h4, label {
         direction: rtl;
         text-align: right;
-        font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
+        font-family: 'Tahoma', sans-serif !important;
     }
-    .dataframe {
-        font-size: 14px !important;
+    .stButton>button {
+        width: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -49,21 +57,11 @@ def get_low_stock_products():
 init_db()
 
 # ==========================================
-# مدیریت Session State برای اسکنر اتوماتیک
-# ==========================================
-if "current_barcode" not in st.session_state:
-    st.session_state.current_barcode = ""
-
-if "barcode" in st.query_params:
-    st.session_state.current_barcode = st.query_params["barcode"]
-    st.query_params.clear() 
-
-# ==========================================
 # سایدبار و منوی ناوبری
 # ==========================================
 st.sidebar.title("🚗 سیستم مدیریت فروشگاه")
 st.sidebar.markdown("---")
-menu = ["🛒 ثبت فروش / اسکن", "📦 مدیریت انبار", "➕ افزودن کالای جدید", "📊 گزارش‌ها"]
+menu = ["🛒 ثبت فروش / بررسی کالا", "📦 مدیریت انبار", "➕ افزودن کالای جدید", "📊 گزارش‌ها"]
 choice = st.sidebar.radio("منوی اصلی:", menu)
 
 low_stock_df = get_low_stock_products()
@@ -74,116 +72,89 @@ if not low_stock_df.empty:
         st.sidebar.warning(f"کالای '{row['name']}' فقط {row['stock']} عدد")
 
 # ==========================================
-# بخش 1: ثبت فروش و اسکن
+# بخش 1: ثبت فروش و بررسی کالا
 # ==========================================
-if choice == "🛒 ثبت فروش / اسکن":
-    st.header("ثبت فروش و بررسی کالا")
+if choice == "🛒 ثبت فروش / بررسی کالا":
+    st.header("🛒 ثبت فروش و بررسی کالا")
     
-    scan_method = st.radio("روش ورود کد کالا:", ("ورود دستی", "دوربین گوشی (اسکنر زنده)"))
-
-    if scan_method == "دوربین گوشی (اسکنر زنده)":
-        if st.session_state.current_barcode:
-            st.success(f"✅ کد اسکن شده: {st.session_state.current_barcode}")
-            if st.button("📷 اسکن یک کالای دیگر"):
-                st.session_state.current_barcode = ""
-                st.rerun()
-        else:
-            st.info("📷 دوربین پشت گوشی فعال است. بارکد کالا را مقابل دوربین بگیرید (به محض خواندن، خودکار تایید می‌شود)...")
+    # چیدمان دسکتاپی (دو ستونه)
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.info("🔹 راهنما: کد کالا را وارد کنید یا با اسکنر فیزیکی اسکن کنید (Enter به صورت خودکار زده می‌شود). برای اسکن با گوشی از دکمه دوربین استفاده کنید.")
+        scan_method = st.radio("روش ورود کد:", ("کیبورد / بارکدخوان فیزیکی", "دوربین گوشی / وب‌کم"))
+        
+        code_input = ""
+        
+        if scan_method == "کیبورد / بارکدخوان فیزیکی":
+            # بارکدخوان‌های فیزیکی بعد از اسکن خودکار اینتر می‌زنند که باعث لود مشخصات می‌شود
+            code_input = st.text_input("کد کالا را اینجا اسکن یا وارد کنید:", key="barcode_input")
             
-            # اسکنر اختصاصی با اجبار به استفاده از دوربین اصلی (پشت)
-            html_code = """
-            <div id="reader" style="width: 100%; border-radius: 8px; overflow: hidden; border: 2px solid #ccc;"></div>
-            <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-            <script>
-                function onScanSuccess(decodedText, decodedResult) {
-                    // متوقف کردن دوربین پس از اسکن موفق و انتقال بارکد به صفحه
-                    html5QrCode.stop().then((ignore) => {
-                        window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
-                    }).catch((err) => {
-                        window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
-                    });
-                }
-
-                let html5QrCode = new Html5Qrcode("reader");
-                
-                // تنظیم اجباری روی دوربین پشت (environment)
-                html5QrCode.start(
-                    { facingMode: "environment" }, 
-                    {
-                        fps: 20,
-                        qrbox: { width: 250, height: 250 }
-                    },
-                    onScanSuccess
-                ).catch((err) => {
-                    // اگر به هر دلیلی دوربین پشت در دسترس نبود، سوییچ روی دوربین پیش‌فرض
-                    html5QrCode.start(
-                        { facingMode: "user" }, 
-                        { fps: 20, qrbox: { width: 250, height: 250 } },
-                        onScanSuccess
-                    );
-                });
-            </script>
-            """
-            components.html(html_code, height=450)
-
-    elif scan_method == "ورود دستی":
-        manual_code = st.text_input("کد یا بارکد کالا را وارد کنید:", value=st.session_state.current_barcode, placeholder="مثلاً: 123456789")
-        st.session_state.current_barcode = manual_code
-
-    code_input = st.session_state.current_barcode
-
-    if code_input:
-        conn = sqlite3.connect(DB_NAME)
-        c = conn.cursor()
-        c.execute("SELECT * FROM products WHERE code=?", (code_input,))
-        product = c.fetchone()
-        conn.close()
-
-        if product:
-            st.markdown("---")
-            st.subheader("مشخصات کالا")
-            st.info(f"**نام کالا:** {product[1]} | **دسته‌بندی:** {product[2]}")
-            
-            stock_color = "red" if product[5] < 3 else "green"
-            st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان | **موجودی:** <span style='color:{stock_color}; font-weight:bold;'>{product[5]}</span> عدد", unsafe_allow_html=True)
-
-            with st.form("sale_form"):
-                sale_qty = st.number_input("تعداد فروش", min_value=1, max_value=product[5] if product[5] > 0 else 1, value=1)
-                submit_sale = st.form_submit_button("✅ ثبت نهایی فروش")
-
-                if submit_sale:
-                    if product[5] >= sale_qty:
-                        new_stock = product[5] - sale_qty
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        conn = sqlite3.connect(DB_NAME)
-                        c = conn.cursor()
-                        c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
-                        c.execute("INSERT INTO sales (product_code, name, quantity, sale_price, sale_date) VALUES (?, ?, ?, ?, ?)",
-                                  (code_input, product[1], sale_qty, product[4], now))
-                        conn.commit()
-                        conn.close()
-                        
-                        st.success(f"فروش {sale_qty} عدد '{product[1]}' با موفقیت ثبت شد!")
-                        st.session_state.current_barcode = ""
-                        st.rerun() 
+        elif scan_method == "دوربین گوشی / وب‌کم":
+            if HAS_PYZBAR:
+                img_file = st.camera_input("📷 عکس از بارکد")
+                if img_file is not None:
+                    image = Image.open(img_file)
+                    decoded = decode(image)
+                    if decoded:
+                        code_input = decoded[0].data.decode("utf-8")
+                        st.success(f"✅ بارکد خوانده شد: {code_input}")
                     else:
-                        st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
-        else:
-            if scan_method == "دوربین گوشی (اسکنر زنده)":
-                st.warning("کالایی با این کد در انبار یافت نشد!")
+                        st.error("❌ بارکدی در تصویر پیدا نشد. دوباره امتحان کنید.")
+            else:
+                st.error("کتابخانه‌های پردازش تصویر نصب نیستند (به فایل packages.txt در گیت‌هاب نیاز است).")
+
+    with col2:
+        if code_input:
+            conn = sqlite3.connect(DB_NAME)
+            c = conn.cursor()
+            c.execute("SELECT * FROM products WHERE code=?", (code_input,))
+            product = c.fetchone()
+            conn.close()
+
+            if product:
+                st.subheader(f"📦 مشخصات: {product[1]}")
+                st.markdown(f"**دسته‌بندی:** {product[2]}")
+                
+                stock_color = "red" if product[5] < 3 else "green"
+                st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان")
+                st.markdown(f"**موجودی انبار:** <span style='color:{stock_color}; font-size:20px; font-weight:bold;'>{product[5]}</span> عدد", unsafe_allow_html=True)
+
+                st.markdown("---")
+                with st.form("sale_form"):
+                    sale_qty = st.number_input("تعداد فروش", min_value=1, max_value=product[5] if product[5] > 0 else 1, value=1)
+                    submit_sale = st.form_submit_button("✅ ثبت نهایی فروش و کسر از انبار")
+
+                    if submit_sale:
+                        if product[5] >= sale_qty:
+                            new_stock = product[5] - sale_qty
+                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            conn = sqlite3.connect(DB_NAME)
+                            c = conn.cursor()
+                            c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
+                            c.execute("INSERT INTO sales (product_code, name, quantity, sale_price, sale_date) VALUES (?, ?, ?, ?, ?)",
+                                      (code_input, product[1], sale_qty, product[4], now))
+                            conn.commit()
+                            conn.close()
+                            
+                            st.success(f"فروش {sale_qty} عدد با موفقیت ثبت شد!")
+                        else:
+                            st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
+            else:
+                st.warning("⚠️ کالایی با این کد در سیستم ثبت نشده است.")
 
 # ==========================================
 # بخش 2: مدیریت انبار
 # ==========================================
 elif choice == "📦 مدیریت انبار":
-    st.header("لیست و ویرایش محصولات")
+    st.header("📦 لیست و مدیریت محصولات")
     
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام کالا', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
     conn.close()
 
-    search = st.text_input("🔍 جستجو بر اساس نام یا کد کالا:")
+    search = st.text_input("🔍 جستجوی سریع (نام یا کد):")
     if search:
         df = df[(df['نام کالا'].str.contains(search, na=False)) | (df['کد کالا'].str.contains(search, na=False))]
 
@@ -191,7 +162,9 @@ elif choice == "📦 مدیریت انبار":
 
     st.markdown("---")
     st.subheader("ویرایش یا حذف کالا")
-    edit_code = st.text_input("برای ویرایش یا حذف، **کد کالا** را اینجا وارد کنید:")
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        edit_code = st.text_input("کد کالای مورد نظر را وارد کنید:")
     
     if edit_code:
         conn = sqlite3.connect(DB_NAME)
@@ -201,60 +174,65 @@ elif choice == "📦 مدیریت انبار":
         conn.close()
 
         if prod:
-            with st.form("edit_form"):
-                e_name = st.text_input("نام کالا", prod[1])
-                e_cat = st.text_input("دسته‌بندی", prod[2])
-                e_buy = st.number_input("قیمت خرید", value=int(prod[3]), step=1000)
-                e_sell = st.number_input("قیمت فروش", value=int(prod[4]), step=1000)
-                e_stock = st.number_input("موجودی", value=int(prod[5]), step=1)
+            with col2:
+                with st.form("edit_form"):
+                    e_name = st.text_input("نام کالا", prod[1])
+                    e_cat = st.text_input("دسته‌بندی", prod[2])
+                    e_buy = st.number_input("قیمت خرید", value=int(prod[3]), step=1000)
+                    e_sell = st.number_input("قیمت فروش", value=int(prod[4]), step=1000)
+                    e_stock = st.number_input("موجودی", value=int(prod[5]), step=1)
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    update_btn = st.form_submit_button("💾 ذخیره تغییرات")
-                with col2:
-                    delete_btn = st.form_submit_button("🗑️ حذف کالا")
+                    ecol1, ecol2 = st.columns(2)
+                    with ecol1:
+                        update_btn = st.form_submit_button("💾 ذخیره تغییرات")
+                    with ecol2:
+                        delete_btn = st.form_submit_button("🗑️ حذف کالا")
 
-                if update_btn:
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("UPDATE products SET name=?, category=?, purchase_price=?, sale_price=?, stock=? WHERE code=?",
-                              (e_name, e_cat, e_buy, e_sell, e_stock, edit_code))
-                    conn.commit()
-                    conn.close()
-                    st.success("اطلاعات کالا با موفقیت به‌روزرسانی شد!")
-                    st.rerun()
+                    if update_btn:
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        c.execute("UPDATE products SET name=?, category=?, purchase_price=?, sale_price=?, stock=? WHERE code=?",
+                                  (e_name, e_cat, e_buy, e_sell, e_stock, edit_code))
+                        conn.commit()
+                        conn.close()
+                        st.success("به‌روزرسانی انجام شد.")
+                        st.rerun()
 
-                if delete_btn:
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("DELETE FROM products WHERE code=?", (edit_code,))
-                    conn.commit()
-                    conn.close()
-                    st.warning("کالا از انبار حذف شد!")
-                    st.rerun()
+                    if delete_btn:
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        c.execute("DELETE FROM products WHERE code=?", (edit_code,))
+                        conn.commit()
+                        conn.close()
+                        st.warning("کالا حذف شد.")
+                        st.rerun()
         else:
-            st.warning("کالایی با این کد برای ویرایش یافت نشد.")
+            with col2:
+                st.warning("کالایی یافت نشد.")
 
 # ==========================================
 # بخش 3: افزودن کالای جدید
 # ==========================================
 elif choice == "➕ افزودن کالای جدید":
-    st.header("تعریف کالای جدید در انبار")
+    st.header("➕ تعریف کالای جدید")
     
     with st.form("add_product_form", clear_on_submit=True):
-        p_code = st.text_input("کد / بارکد کالا (الزامی) *", help="میتوانید کد روی جعبه را به صورت دستی وارد کنید")
-        p_name = st.text_input("نام کالا (الزامی) *")
-        p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "مانیتور و سیستم صوتی", "دزدگیر و ردیاب", "تزئینات و خوشبوکننده", "سایر"])
+        col1, col2 = st.columns(2)
+        with col1:
+            p_code = st.text_input("کد / بارکد کالا *")
+            p_name = st.text_input("نام کالا *")
+            p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "مانیتور و سیستم صوتی", "دزدگیر و ردیاب", "تزئینات و خوشبوکننده", "سایر"])
         
-        p_buy = st.number_input("قیمت خرید (تومان)", min_value=0, step=10000)
-        p_sell = st.number_input("قیمت فروش (تومان)", min_value=0, step=10000)
-        p_stock = st.number_input("موجودی اولیه (تعداد)", min_value=0, step=1)
+        with col2:
+            p_buy = st.number_input("قیمت خرید (تومان)", min_value=0, step=10000)
+            p_sell = st.number_input("قیمت فروش (تومان)", min_value=0, step=10000)
+            p_stock = st.number_input("موجودی اولیه (تعداد)", min_value=0, step=1)
 
-        submitted = st.form_submit_button("➕ ثبت کالا در انبار")
+        submitted = st.form_submit_button("ثبت در انبار")
         
         if submitted:
             if p_code.strip() == "" or p_name.strip() == "":
-                st.error("وارد کردن کد و نام کالا الزامی است.")
+                st.error("کد و نام کالا الزامی است.")
             else:
                 try:
                     conn = sqlite3.connect(DB_NAME)
@@ -263,29 +241,30 @@ elif choice == "➕ افزودن کالای جدید":
                               (p_code, p_name, p_cat, p_buy, p_sell, p_stock))
                     conn.commit()
                     conn.close()
-                    st.success(f"کالای '{p_name}' با موفقیت به انبار اضافه شد!")
+                    st.success(f"کالای '{p_name}' ثبت شد.")
                 except sqlite3.IntegrityError:
-                    st.error("خطا: کالایی با این کد از قبل در سیستم وجود دارد!")
+                    st.error("این کد کالا قبلاً ثبت شده است!")
 
 # ==========================================
 # بخش 4: گزارش‌ها
 # ==========================================
 elif choice == "📊 گزارش‌ها":
-    st.header("گزارش فروش و مانیتورینگ مالی")
+    st.header("📊 گزارش فروش مالی")
     
     conn = sqlite3.connect(DB_NAME)
-    sales_df = pd.read_sql_query("SELECT id as 'کد فاکتور', product_code as 'کد کالا', name as 'نام کالا', quantity as 'تعداد', sale_price as 'قیمت فروش واحد', sale_date as 'تاریخ و زمان' FROM sales ORDER BY id DESC", conn)
+    sales_df = pd.read_sql_query("SELECT id as 'کد فاکتور', product_code as 'کد کالا', name as 'نام کالا', quantity as 'تعداد', sale_price as 'قیمت فروش', sale_date as 'تاریخ و زمان' FROM sales ORDER BY id DESC", conn)
     conn.close()
 
     if not sales_df.empty:
-        sales_df['جمع کل فاکتور (تومان)'] = sales_df['تعداد'] * sales_df['قیمت فروش واحد']
-        st.dataframe(sales_df, use_container_width=True, hide_index=True)
-
-        total_sales = sales_df['جمع کل فاکتور (تومان)'].sum()
+        sales_df['جمع کل (تومان)'] = sales_df['تعداد'] * sales_df['قیمت فروش']
+        
+        col1, col2 = st.columns(2)
+        total_sales = sales_df['جمع کل (تومان)'].sum()
         total_items = sales_df['تعداد'].sum()
         
-        st.markdown("---")
-        st.success(f"💰 **جمع کل درآمد فروش:** {total_sales:,.0f} تومان")
-        st.info(f"📦 **مجموع کالاهای فروخته شده:** {total_items} عدد")
+        col1.success(f"💰 جمع درآمد: {total_sales:,.0f} تومان")
+        col2.info(f"📦 تعداد کل اقلام فروخته شده: {total_items} عدد")
+        
+        st.dataframe(sales_df, use_container_width=True, hide_index=True)
     else:
-        st.info("تا کنون هیچ فروشی در سیستم ثبت نشده است.")
+        st.info("هیچ فاکتوری ثبت نشده است.")
