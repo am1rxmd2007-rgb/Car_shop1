@@ -1,6 +1,2 @@
 streamlit
 pandas
-pyzbar
-opencv-python-headless
-pillow
-jdatetime
