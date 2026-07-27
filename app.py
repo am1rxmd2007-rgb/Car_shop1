@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
-import json
 
 # ==========================================
 # تنظیمات صفحه و راست‌چین کردن (RTL + Mobile Fix)
@@ -88,19 +87,19 @@ if not low_stock_df.empty:
         st.sidebar.warning(f"کالای '{row['name']}' فقط {row['stock']} عدد")
 
 # ==========================================
-# بخش ۱: ثبت فروش و اسکن هوشمند
+# بخش ۱: ثبت فروش و اسکن هوشمند (فقط دوربین پشت)
 # ==========================================
 if choice == "🛒 ثبت فروش / اسکن":
     st.header("🛒 ثبت فروش و اسکن کالا")
     
-    tab1, tab2 = st.tabs(["📷 اسکنر دوربین (سریع و هوشمند)", "🔢 ورود دستی کد"])
+    tab1, tab2 = st.tabs(["📷 اسکنر دوربین پشت", "🔢 ورود دستی کد"])
     
     code_input = ""
 
     with tab1:
-        st.info("💡 دوربین را جلوی بارکد کالا بگیرید (پشتیبانی از شیشه، عطربطری و سطوح براق)")
+        st.info("💡 دوربین پشت گوشی به صورت خودکار فعال می‌شود.")
         
-        # اسکنر زنده HTML5 برای اسکن سریع انواع بارکد روی موبایل
+        # اسکنر زنده با اجبار به استفاده از دوربین پشت (facingMode: environment)
         html_code = """
         <div id="reader"></div>
         <script src="https://unpkg.com/html5-qrcode"></script>
@@ -113,7 +112,14 @@ if choice == "🛒 ثبت فروش / اسکن":
                 }
             }
             let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader", { fps: 15, qrbox: {width: 250, height: 150} }, false);
+                "reader", 
+                { 
+                    fps: 15, 
+                    qrbox: {width: 250, height: 150},
+                    videoConstraints: { facingMode: { exact: "environment" } }
+                }, 
+                false
+            );
             html5QrcodeScanner.render(onScanSuccess);
         </script>
         """
