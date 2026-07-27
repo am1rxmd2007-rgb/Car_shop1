@@ -2,29 +2,21 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
-from PIL import Image
-
-# تلاش برای ایمپورت کتابخانه بارکدخوان (در صورت عدم نصب، برنامه متوقف نمی‌شود)
-try:
-    from pyzbar.pyzbar import decode
-    HAS_PYZBAR = True
-except ImportError:
-    HAS_PYZBAR = False
+import streamlit.components.v1 as components
 
 # ==========================================
 # تنظیمات صفحه و راست‌چین کردن (RTL)
 # ==========================================
 st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="centered")
 
-# تزریق CSS برای راست‌چین کردن کامل و بهبود فونت در موبایل
+# حل مشکل تصویر (حذف div از استایل‌ها برای جلوگیری از بهم‌ریختگی ساختار)
 st.markdown("""
 <style>
-    .stApp, .stMarkdown, p, div, input, select, label {
+    .stApp, .stMarkdown, p, input, select, label, h1, h2, h3, h4, h5, h6, span {
         direction: rtl;
         text-align: right;
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
-    /* تنظیمات جدول برای موبایل */
     .dataframe {
         font-size: 14px !important;
     }
@@ -37,14 +29,11 @@ st.markdown("""
 DB_NAME = "inventory.db"
 
 def init_db():
-    """ساخت جداول دیتابیس در صورت عدم وجود"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # جدول محصولات
     c.execute('''CREATE TABLE IF NOT EXISTS products
                  (code TEXT PRIMARY KEY, name TEXT, category TEXT,
                   purchase_price REAL, sale_price REAL, stock INTEGER)''')
-    # جدول فروش‌ها
     c.execute('''CREATE TABLE IF NOT EXISTS sales
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   product_code TEXT, name TEXT, quantity INTEGER,
@@ -53,14 +42,24 @@ def init_db():
     conn.close()
 
 def get_low_stock_products():
-    """دریافت کالاهایی که موجودی آن‌ها کمتر از 3 است"""
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query("SELECT name, stock FROM products WHERE stock < 3", conn)
     conn.close()
     return df
 
-# راه‌اندازی اولیه دیتابیس
 init_db()
+
+# ==========================================
+# مدیریت Session State برای اسکنر اتوماتیک
+# ==========================================
+if "current_barcode" not in st.session_state:
+    st.session_state.current_barcode = ""
+
+# گرفتن بارکد از URL (زمانی که اسکنر جاوااسکریپت آن را می‌فرستد)
+if "barcode" in st.query_params:
+    st.session_state.current_barcode = st.query_params["barcode"]
+    # پاک کردن URL برای جلوگیری از اسکن تکراری با رفرش صفحه
+    st.query_params.clear() 
 
 # ==========================================
 # سایدبار و منوی ناوبری
@@ -70,7 +69,6 @@ st.sidebar.markdown("---")
 menu = ["🛒 ثبت فروش / اسکن", "📦 مدیریت انبار", "➕ افزودن کالای جدید", "📊 گزارش‌ها"]
 choice = st.sidebar.radio("منوی اصلی:", menu)
 
-# نمایش هشدار کمبود موجودی در منوی کناری (همیشه در دسترس)
 low_stock_df = get_low_stock_products()
 if not low_stock_df.empty:
     st.sidebar.markdown("---")
@@ -84,28 +82,43 @@ if not low_stock_df.empty:
 if choice == "🛒 ثبت فروش / اسکن":
     st.header("ثبت فروش و بررسی کالا")
     
-    # انتخاب روش ورود کد کالا
-    scan_method = st.radio("روش ورود کد کالا:", ("ورود دستی", "دوربین گوشی (اسکنر)"))
-    code_input = ""
+    scan_method = st.radio("روش ورود کد کالا:", ("ورود دستی", "دوربین گوشی (اسکنر زنده)"))
 
-    if scan_method == "دوربین گوشی (اسکنر)":
-        if HAS_PYZBAR:
-            img_file_buffer = st.camera_input("از بارکد یا QR Code کالا عکس بگیرید")
-            if img_file_buffer is not None:
-                image = Image.open(img_file_buffer)
-                decoded = decode(image)
-                if decoded:
-                    code_input = decoded[0].data.decode("utf-8")
-                    st.success(f"✅ بارکد خوانده شد: {code_input}")
-                else:
-                    st.error("❌ بارکدی در تصویر پیدا نشد. لطفاً دوباره عکس بگیرید.")
+    if scan_method == "دوربین گوشی (اسکنر زنده)":
+        if st.session_state.current_barcode:
+            # اگر بارکد اسکن شده باشد
+            st.success(f"✅ کد اسکن شده: {st.session_state.current_barcode}")
+            if st.button("📷 اسکن یک کالای دیگر (یا اسکن مجدد)"):
+                st.session_state.current_barcode = ""
+                st.rerun()
         else:
-            st.error("کتابخانه pyzbar نصب نیست. در حال حاضر فقط ورود دستی امکان‌پذیر است.")
+            # اسکنر زنده HTML5
+            st.info("دوربین روشن است. بارکد را مقابل دوربین بگیرید تا خودکار اسکن شود...")
+            html_code = """
+            <div id="qr-reader" style="width: 100%; border-radius: 8px; border: 2px solid #ddd; overflow: hidden;"></div>
+            <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+            <script>
+                function onScanSuccess(decodedText, decodedResult) {
+                    html5QrcodeScanner.clear(); // خاموش کردن دوربین بعد از تشخیص موفق
+                    // ارسال بارکد به استریم‌لیت از طریق اضافه کردن به URL
+                    window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
+                }
+                var html5QrcodeScanner = new Html5QrcodeScanner(
+                    "qr-reader", 
+                    { fps: 15, qrbox: {width: 250, height: 250}, facingMode: "environment" }, 
+                    false
+                );
+                html5QrcodeScanner.render(onScanSuccess);
+            </script>
+            """
+            components.html(html_code, height=400)
 
-    if scan_method == "ورود دستی" or not code_input:
-        code_input = st.text_input("کد یا بارکد کالا را وارد کنید:", placeholder="مثلاً: 123456789")
+    elif scan_method == "ورود دستی":
+        manual_code = st.text_input("کد یا بارکد کالا را وارد کنید:", value=st.session_state.current_barcode, placeholder="مثلاً: 123456789")
+        st.session_state.current_barcode = manual_code
 
-    # اگر کدی (از طریق دوربین یا دستی) وارد شده باشد
+    code_input = st.session_state.current_barcode
+
     if code_input:
         conn = sqlite3.connect(DB_NAME)
         c = conn.cursor()
@@ -118,37 +131,34 @@ if choice == "🛒 ثبت فروش / اسکن":
             st.subheader("مشخصات کالا")
             st.info(f"**نام کالا:** {product[1]} | **دسته‌بندی:** {product[2]}")
             
-            # نمایش رنگی موجودی
             stock_color = "red" if product[5] < 3 else "green"
             st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان | **موجودی:** <span style='color:{stock_color}; font-weight:bold;'>{product[5]}</span> عدد", unsafe_allow_html=True)
 
-            # فرم ثبت فروش
             with st.form("sale_form"):
                 sale_qty = st.number_input("تعداد فروش", min_value=1, max_value=product[5] if product[5] > 0 else 1, value=1)
                 submit_sale = st.form_submit_button("✅ ثبت نهایی فروش")
 
                 if submit_sale:
                     if product[5] >= sale_qty:
-                        # کسر از موجودی
                         new_stock = product[5] - sale_qty
                         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
                         conn = sqlite3.connect(DB_NAME)
                         c = conn.cursor()
                         c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
-                        # ثبت در گزارش فروش
                         c.execute("INSERT INTO sales (product_code, name, quantity, sale_price, sale_date) VALUES (?, ?, ?, ?, ?)",
                                   (code_input, product[1], sale_qty, product[4], now))
                         conn.commit()
                         conn.close()
                         
-                        st.success(f"فروش {sale_qty} عدد '{product[1]}' با موفقیت ثبت شد و از انبار کسر گردید!")
-                        # ریفرش کردن صفحه برای آپدیت شدن موجودی در UI
+                        st.success(f"فروش {sale_qty} عدد '{product[1]}' با موفقیت ثبت شد!")
+                        st.session_state.current_barcode = "" # پاک کردن بارکد تا دوربین برای کالای بعدی آماده شود
                         st.rerun() 
                     else:
                         st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
         else:
-            st.warning("کالایی با این کد در انبار یافت نشد!")
+            if scan_method == "دوربین گوشی (اسکنر زنده)":
+                st.warning("کالایی با این کد در انبار یافت نشد!")
 
 # ==========================================
 # بخش 2: مدیریت انبار
@@ -160,7 +170,6 @@ elif choice == "📦 مدیریت انبار":
     df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام کالا', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
     conn.close()
 
-    # نوار جستجو
     search = st.text_input("🔍 جستجو بر اساس نام یا کد کالا:")
     if search:
         df = df[(df['نام کالا'].str.contains(search, na=False)) | (df['کد کالا'].str.contains(search, na=False))]
@@ -256,7 +265,6 @@ elif choice == "📊 گزارش‌ها":
     conn.close()
 
     if not sales_df.empty:
-        # محاسبه جمع کل هر ردیف
         sales_df['جمع کل فاکتور (تومان)'] = sales_df['تعداد'] * sales_df['قیمت فروش واحد']
         st.dataframe(sales_df, use_container_width=True, hide_index=True)
 
