@@ -2,21 +2,20 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
-from PIL import Image
 
-# بررسی نصب بودن کتابخانه بارکدخوان
+# ایمپورت اسکنر حرفه‌ای و خودکار بارکد
 try:
-    from pyzbar.pyzbar import decode
-    HAS_PYZBAR = True
+    from streamlit_qrcode_scanner import qrcode_scanner
+    HAS_SCANNER_PKG = True
 except ImportError:
-    HAS_PYZBAR = False
+    HAS_SCANNER_PKG = False
 
 # ==========================================
-# تنظیمات صفحه (عریض برای دسکتاپ) و CSS ایمن
+# تنظیمات صفحه (عریض برای دسکتاپ و موبایل)
 # ==========================================
 st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="wide")
 
-# CSS ایمن: فقط متن‌ها راست‌چین می‌شوند تا ساختار برنامه به هم نریزد
+# CSS امن و بدون باگ برای راست‌چین کردن متن‌ها
 st.markdown("""
 <style>
     .stMarkdown, p, h1, h2, h3, h4, label {
@@ -31,7 +30,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# توابع مربوط به دیتابیس (SQLite)
+# توابع دیتابیس SQLite
 # ==========================================
 DB_NAME = "inventory.db"
 
@@ -57,7 +56,7 @@ def get_low_stock_products():
 init_db()
 
 # ==========================================
-# سایدبار و منوی ناوبری
+# منوی کناری (سایدبار)
 # ==========================================
 st.sidebar.title("🚗 سیستم مدیریت فروشگاه")
 st.sidebar.markdown("---")
@@ -77,32 +76,27 @@ if not low_stock_df.empty:
 if choice == "🛒 ثبت فروش / بررسی کالا":
     st.header("🛒 ثبت فروش و بررسی کالا")
     
-    # چیدمان دسکتاپی (دو ستونه)
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.info("🔹 راهنما: کد کالا را وارد کنید یا با اسکنر فیزیکی اسکن کنید (Enter به صورت خودکار زده می‌شود). برای اسکن با گوشی از دکمه دوربین استفاده کنید.")
-        scan_method = st.radio("روش ورود کد:", ("کیبورد / بارکدخوان فیزیکی", "دوربین گوشی / وب‌کم"))
+        st.info("🔹 راهنما: می‌توانید از بارکدخوان فیزیکی یا اسکنر خودکار دوربین استفاده کنید.")
+        scan_method = st.radio("روش ورود کد:", ("کیبورد / بارکدخوان فیزیکی", "دوربین (اسکنر خودکار حرفه‌ای)"))
         
         code_input = ""
         
         if scan_method == "کیبورد / بارکدخوان فیزیکی":
-            # بارکدخوان‌های فیزیکی بعد از اسکن خودکار اینتر می‌زنند که باعث لود مشخصات می‌شود
             code_input = st.text_input("کد کالا را اینجا اسکن یا وارد کنید:", key="barcode_input")
             
-        elif scan_method == "دوربین گوشی / وب‌کم":
-            if HAS_PYZBAR:
-                img_file = st.camera_input("📷 عکس از بارکد")
-                if img_file is not None:
-                    image = Image.open(img_file)
-                    decoded = decode(image)
-                    if decoded:
-                        code_input = decoded[0].data.decode("utf-8")
-                        st.success(f"✅ بارکد خوانده شد: {code_input}")
-                    else:
-                        st.error("❌ بارکدی در تصویر پیدا نشد. دوباره امتحان کنید.")
+        elif scan_method == "دوربین (اسکنر خودکار حرفه‌ای)":
+            if HAS_SCANNER_PKG:
+                st.markdown("📷 **دوربین فعال است. بارکد را مقابل دوربین بگیرید (به محض تشخیص، خودکار تایید می‌شود):**")
+                # اسکنر خودکار فوق‌العاده قوی
+                scanned_code = qrcode_scanner(key='pro_scanner')
+                if scanned_code:
+                    code_input = scanned_code
+                    st.success(f"✅ اسکن موفق: {code_input}")
             else:
-                st.error("کتابخانه‌های پردازش تصویر نصب نیستند (به فایل packages.txt در گیت‌هاب نیاز است).")
+                st.error("کتابخانه اسکنر نصب نیست. لطفاً requirements.txt را بررسی کنید.")
 
     with col2:
         if code_input:
@@ -139,6 +133,7 @@ if choice == "🛒 ثبت فروش / بررسی کالا":
                             conn.close()
                             
                             st.success(f"فروش {sale_qty} عدد با موفقیت ثبت شد!")
+                            st.rerun()
                         else:
                             st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
             else:
