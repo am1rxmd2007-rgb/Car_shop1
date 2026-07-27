@@ -9,7 +9,6 @@ import streamlit.components.v1 as components
 # ==========================================
 st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="centered")
 
-# حل مشکل تصویر (حذف div از استایل‌ها برای جلوگیری از بهم‌ریختگی ساختار)
 st.markdown("""
 <style>
     .stApp, .stMarkdown, p, input, select, label, h1, h2, h3, h4, h5, h6, span {
@@ -55,10 +54,8 @@ init_db()
 if "current_barcode" not in st.session_state:
     st.session_state.current_barcode = ""
 
-# گرفتن بارکد از URL (زمانی که اسکنر جاوااسکریپت آن را می‌فرستد)
 if "barcode" in st.query_params:
     st.session_state.current_barcode = st.query_params["barcode"]
-    # پاک کردن URL برای جلوگیری از اسکن تکراری با رفرش صفحه
     st.query_params.clear() 
 
 # ==========================================
@@ -86,32 +83,48 @@ if choice == "🛒 ثبت فروش / اسکن":
 
     if scan_method == "دوربین گوشی (اسکنر زنده)":
         if st.session_state.current_barcode:
-            # اگر بارکد اسکن شده باشد
             st.success(f"✅ کد اسکن شده: {st.session_state.current_barcode}")
-            if st.button("📷 اسکن یک کالای دیگر (یا اسکن مجدد)"):
+            if st.button("📷 اسکن یک کالای دیگر"):
                 st.session_state.current_barcode = ""
                 st.rerun()
         else:
-            # اسکنر زنده HTML5
-            st.info("دوربین روشن است. بارکد را مقابل دوربین بگیرید تا خودکار اسکن شود...")
+            st.info("📷 دوربین پشت گوشی فعال است. بارکد کالا را مقابل دوربین بگیرید (به محض خواندن، خودکار تایید می‌شود)...")
+            
+            # اسکنر اختصاصی با اجبار به استفاده از دوربین اصلی (پشت)
             html_code = """
-            <div id="qr-reader" style="width: 100%; border-radius: 8px; border: 2px solid #ddd; overflow: hidden;"></div>
+            <div id="reader" style="width: 100%; border-radius: 8px; overflow: hidden; border: 2px solid #ccc;"></div>
             <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
             <script>
                 function onScanSuccess(decodedText, decodedResult) {
-                    html5QrcodeScanner.clear(); // خاموش کردن دوربین بعد از تشخیص موفق
-                    // ارسال بارکد به استریم‌لیت از طریق اضافه کردن به URL
-                    window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
+                    // متوقف کردن دوربین پس از اسکن موفق و انتقال بارکد به صفحه
+                    html5QrCode.stop().then((ignore) => {
+                        window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
+                    }).catch((err) => {
+                        window.parent.location.href = window.parent.location.pathname + "?barcode=" + encodeURIComponent(decodedText);
+                    });
                 }
-                var html5QrcodeScanner = new Html5QrcodeScanner(
-                    "qr-reader", 
-                    { fps: 15, qrbox: {width: 250, height: 250}, facingMode: "environment" }, 
-                    false
-                );
-                html5QrcodeScanner.render(onScanSuccess);
+
+                let html5QrCode = new Html5Qrcode("reader");
+                
+                // تنظیم اجباری روی دوربین پشت (environment)
+                html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    {
+                        fps: 20,
+                        qrbox: { width: 250, height: 250 }
+                    },
+                    onScanSuccess
+                ).catch((err) => {
+                    // اگر به هر دلیلی دوربین پشت در دسترس نبود، سوییچ روی دوربین پیش‌فرض
+                    html5QrCode.start(
+                        { facingMode: "user" }, 
+                        { fps: 20, qrbox: { width: 250, height: 250 } },
+                        onScanSuccess
+                    );
+                });
             </script>
             """
-            components.html(html_code, height=400)
+            components.html(html_code, height=450)
 
     elif scan_method == "ورود دستی":
         manual_code = st.text_input("کد یا بارکد کالا را وارد کنید:", value=st.session_state.current_barcode, placeholder="مثلاً: 123456789")
@@ -152,7 +165,7 @@ if choice == "🛒 ثبت فروش / اسکن":
                         conn.close()
                         
                         st.success(f"فروش {sale_qty} عدد '{product[1]}' با موفقیت ثبت شد!")
-                        st.session_state.current_barcode = "" # پاک کردن بارکد تا دوربین برای کالای بعدی آماده شود
+                        st.session_state.current_barcode = ""
                         st.rerun() 
                     else:
                         st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
