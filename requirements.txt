@@ -1,4 +1,6 @@
 streamlit
 pandas
-streamlit-qrcode-scanner
+pyzbar
+opencv-python-headless
+pillow
 jdatetime
