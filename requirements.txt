@@ -1,3 +1,5 @@
 streamlit
 pandas
 streamlit-qrcode-scanner
+jdatetime
+Pillow
