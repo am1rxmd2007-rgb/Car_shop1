@@ -193,19 +193,21 @@ if choice == "🛒 ثبت فروش / بررسی کالا":
                 st.warning("⚠️ کالایی با این کد در سیستم ثبت نشده است.")
 
 # ==========================================
-# بخش 2: مدیریت انبار (سرچ و اسکن برای همه، ویرایش فقط ادمین)
+# بخش 2: مدیریت انبار (لیست کامل، اجناس ناموجود و ابزار ادمین)
 # ==========================================
 elif choice == "📦 مدیریت انبار":
-    st.header("📦 لیست و جستجوی محصولات انبار")
+    st.header("📦 انبار مرکزی فروشگاه")
     
     conn = sqlite3.connect(DB_NAME)
     df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام دستگاه/کالا', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
     conn.close()
 
-    # قابلیت جستجوی سریع و اسکن در بخش مدیریت انبار
+    # ---- بخش اول: لیست کامل تمام کالاها با تمامی اطلاعات و جستجوی سریع ----
+    st.subheader("📋 لیست کامل تمام کالاها با تمام اطلاعات")
+    
     search_col1, search_col2 = st.columns([2, 1])
     with search_col1:
-        search = st.text_input("🔍 جستجوی سریع (نام یا کد):")
+        search = st.text_input("🔍 جستجوی سریع (نام یا کد کالا):")
     with search_col2:
         scan_in_inventory = st.checkbox("فعال‌سازی اسکنر برای جستجو")
 
@@ -217,15 +219,28 @@ elif choice == "📦 مدیریت انبار":
             query_code = scanned_inv
             st.success(f"کد اسکن شده: {query_code}")
 
+    display_df = df.copy()
     if search:
-        df = df[(df['نام دستگاه/کالا'].str.contains(search, na=False, case=False)) | (df['کد کالا'].str.contains(search, na=False, case=False))]
+        display_df = display_df[(display_df['نام دستگاه/کالا'].str.contains(search, na=False, case=False)) | (display_df['کد کالا'].str.contains(search, na=False, case=False))]
     elif query_code:
-        df = df[df['کد کالا'] == query_code]
+        display_df = display_df[display_df['کد کالا'] == query_code]
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ---- بخش دوم: اجناس ناموجود (موجودی صفر) دقیقاً در زیر بخش اول ----
+    st.subheader("🔴 اجناس ناموجود (موجودی صفر)")
+    out_of_stock_df = df[df['موجودی'] == 0]
+    if not out_of_stock_df.empty:
+        st.error(f"⚠️ تعداد {len(out_of_stock_df)} کالا موجودی‌شان تمام شده و صفر است:")
+        st.dataframe(out_of_stock_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ عالی! هیچ کالایی با موجودی صفر (ناموجود) در انبار وجود ندارد.")
 
     st.markdown("---")
     
+    # ---- بخش سوم: مدیریت و ویرایش (فقط ادمین) ----
     if st.session_state.is_admin:
         st.subheader("🛠️ ویرایش یا حذف کالا (مخصوص ادمین)")
         
@@ -329,7 +344,6 @@ elif choice == "➕ افزودن کالای جدید":
             if not p_name.strip():
                 st.error("نام کالا الزامی است.")
             else:
-                # اگر کد وارد نشده بود، یک کد خودکار بر اساس زمان بساز
                 if not p_code.strip():
                     p_code = "AUTO-" + datetime.now().strftime("%Y%m%d%H%M%S")
                 try:
@@ -363,12 +377,9 @@ elif choice == "📊 گزارش‌ها":
             full_df['timestamp'] = pd.to_datetime(full_df['timestamp'])
             now_time = datetime.now()
             
-            # فیلتر روزانه (۲۴ ساعت گذشته)
             daily_df = full_df[full_df['timestamp'] >= (now_time - timedelta(days=1))].copy()
-            # فیلتر ماهانه (۳۱ روز گذشته)
             monthly_df = full_df[full_df['timestamp'] >= (now_time - timedelta(days=31))].copy()
             
-            # حذف ستون کمکی timestamp قبل از نمایش
             display_cols = ['کد فاکتور', 'کد کالا', 'نام دستگاه / کالا', 'تعداد', 'قیمت واحد (تومان)', 'تاریخ و ساعت دقیق']
             
             with tab_daily:
