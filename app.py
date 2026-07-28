@@ -240,14 +240,28 @@ elif choice == "📦 مدیریت انبار":
 
     st.markdown("---")
     
-    # ---- بخش سوم: مدیریت و ویرایش (فقط ادمین) ----
+    # ---- بخش سوم: مدیریت، جستجو، ویرایش و حذف (فقط ادمین) ----
     if st.session_state.is_admin:
         st.subheader("🛠️ ویرایش یا حذف کالا (مخصوص ادمین)")
         
-        manage_mode = st.radio("روش انتخاب کالا:", ("ورود دستی کد", "اسکن با دوربین (اسکنر)"), key="manage_mode")
+        manage_mode = st.radio("روش انتخاب کالا:", ("جستجوی نام یا کد", "ورود دستی کد", "اسکن با دوربین (اسکنر)"), key="manage_mode")
         edit_code = ""
         
-        if manage_mode == "اسکن با دوربین (اسکنر)":
+        if manage_mode == "جستجوی نام یا کد":
+            search_edit_query = st.text_input("بخشی از نام یا کد کالا را برای ویرایش/حذف جستجو کنید:", key="search_edit_query_input")
+            if search_edit_query:
+                conn = sqlite3.connect(DB_NAME)
+                match_df = pd.read_sql_query(f"SELECT code, name FROM products WHERE name LIKE '%{search_edit_query}%' OR code LIKE '%{search_edit_query}%'", conn)
+                conn.close()
+                if not match_df.empty:
+                    options = (match_df['code'] + " - " + match_df['name']).tolist()
+                    selected_option = st.selectbox("کالای مورد نظر را از لیست انتخاب کنید:", options, key="select_edit_product")
+                    if selected_option:
+                        edit_code = selected_option.split(" - ")[0]
+                else:
+                    st.warning("کالایی با این مشخصات پیدا نشد.")
+                    
+        elif manage_mode == "اسکن با دوربین (اسکنر)":
             if HAS_SCANNER_PKG:
                 st.info("بارکد کالا را برای ویرایش/حذف اسکن کنید:")
                 scanned_edit = qrcode_scanner(key='manage_scanner_widget')
