@@ -75,8 +75,8 @@ st.sidebar.subheader("🔐 بخش مدیریت (ادمین)")
 if not st.session_state.is_admin:
     admin_pass = st.sidebar.text_input("رمز عبور ادمین را وارد کنید:", type="password", key="sidebar_admin_pass")
     if st.sidebar.button("ورود به ادمین"):
-        # رمز عبور پیش‌فرض 1234 است (می‌توانید همینجا تغییر دهید)
-        if admin_pass == "1234":
+        # رمز عبور جدید تنظیم شده روی 2613
+        if admin_pass == "2613":
             st.session_state.is_admin = True
             st.sidebar.success("با موفقیت به عنوان ادمین وارد شدید!")
             st.rerun()
@@ -249,19 +249,25 @@ elif choice == "➕ افزودن کالای جدید":
         st.header("➕ تعریف کالای جدید در انبار")
         
         add_mode = st.radio("روش ورود کد کالا:", ("ورود دستی", "اسکن با دوربین (اسکنر)"), key="add_mode")
-        scanned_code_val = ""
         
+        # مدیریت مقدار بارکد اسکن شده برای قرارگیری خودکار در فیلد
+        if "scanned_add_code" not in st.session_state:
+            st.session_state.scanned_add_code = ""
+
         if add_mode == "اسکن با دوربین (اسکنر)":
             if HAS_SCANNER_PKG:
                 st.info("بارکد جدید را مقابل دوربین بگیرید:")
                 scanned = qrcode_scanner(key='add_scanner_widget')
                 if scanned:
-                    scanned_code_val = scanned
-                    st.success(f"بارکد اسکن شد: {scanned_code_val}")
+                    st.session_state.scanned_add_code = scanned
+                    st.success(f"بارکد با موفقیت اسکن شد و در فیلد قرار گرفت: {scanned}")
             else:
                 st.error("کتابخانه اسکنر نصب نیست.")
-
-        p_code = st.text_input("کد / بارکد کالا *", value=scanned_code_val, key="p_code_input")
+        
+        # اگر کاربر حالت دستی را انتخاب کند، فیلد خالی یا مقدار قبلی باشد
+        default_val = st.session_state.scanned_add_code if add_mode == "اسکن با دوربین (اسکنر)" else ""
+        
+        p_code = st.text_input("کد / بارکد کالا *", value=default_val, key="p_code_input")
         p_name = st.text_input("نام دستگاه / کالا *", key="p_name_input")
         p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "مانیتور و سیستم صوتی", "دزدگیر و ردیاب", "تزئینات و خوشبوکننده", "سایر"], key="p_cat_input")
         
@@ -284,30 +290,34 @@ elif choice == "➕ افزودن کالای جدید":
                     conn.commit()
                     conn.close()
                     st.success(f"کالای '{p_name}' با موفقیت در انبار ثبت شد.")
+                    st.session_state.scanned_add_code = "" # پاک کردن حافظه موقت اسکنر
                 except sqlite3.IntegrityError:
                     st.error("این کد کالا قبلاً در سیستم ثبت شده است!")
 
 # ==========================================
-# بخش 4: گزارش‌ها (عمومی برای همه با جزئیات کامل)
+# بخش 4: گزارش‌ها (مخصوص ادمین)
 # ==========================================
 elif choice == "📊 گزارش‌ها":
-    st.header("📊 گزارش جامع فروش و تاریخچه تراکنش‌ها")
-    
-    conn = sqlite3.connect(DB_NAME)
-    sales_df = pd.read_sql_query("SELECT id as 'کد فاکتور', product_code as 'کد کالا', name as 'نام دستگاه / کالا', quantity as 'تعداد فروخته شده', sale_price as 'قیمت واحد (تومان)', sale_date as 'تاریخ و ساعت دقیق' FROM sales ORDER BY id DESC", conn)
-    conn.close()
-
-    if not sales_df.empty:
-        sales_df['جمع کل فاکتور (تومان)'] = sales_df['تعداد فروخته شده'] * sales_df['قیمت واحد (تومان)']
-        
-        col1, col2 = st.columns(2)
-        total_sales = sales_df['جمع کل فاکتور (تومان)'].sum()
-        total_items = sales_df['تعداد فروخته شده'].sum()
-        
-        col1.success(f"💰 کل درآمد فروش: {total_sales:,.0f} تومان")
-        col2.info(f"📦 مجموع دستگاه‌ها/کالاهای فروخته شده: {total_items} عدد")
-        
-        st.markdown("---")
-        st.dataframe(sales_df, use_container_width=True, hide_index=True)
+    if not st.session_state.is_admin:
+        st.error("🔒 دسترسی محدود! این بخش فقط مخصوص ادمین است. لطفاً از منوی سمت چپ (سایدبار) با رمز عبور ادمین وارد شوید.")
     else:
-        st.info("تا کنون هیچ فروشی در سیستم ثبت نشده است.")
+        st.header("📊 گزارش جامع فروش و تاریخچه تراکنش‌ها")
+        
+        conn = sqlite3.connect(DB_NAME)
+        sales_df = pd.read_sql_query("SELECT id as 'کد فاکتور', product_code as 'کد کالا', name as 'نام دستگاه / کالا', quantity as 'تعداد فروخته شده', sale_price as 'قیمت واحد (تومان)', sale_date as 'تاریخ و ساعت دقیق' FROM sales ORDER BY id DESC", conn)
+        conn.close()
+
+        if not sales_df.empty:
+            sales_df['جمع کل فاکتور (تومان)'] = sales_df['تعداد فروخته شده'] * sales_df['قیمت واحد (تومان)']
+            
+            col1, col2 = st.columns(2)
+            total_sales = sales_df['جمع کل فاکتور (تومان)'].sum()
+            total_items = sales_df['تعداد فروخته شده'].sum()
+            
+            col1.success(f"💰 کل درآمد فروش: {total_sales:,.0f} تومان")
+            col2.info(f"📦 مجموع دستگاه‌ها/کالاهای فروخته شده: {total_items} عدد")
+            
+            st.markdown("---")
+            st.dataframe(sales_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("تا کنون هیچ فروشی در سیستم ثبت نشده است.")
