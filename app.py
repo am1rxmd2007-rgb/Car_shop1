@@ -75,7 +75,6 @@ st.sidebar.subheader("🔐 بخش مدیریت (ادمین)")
 if not st.session_state.is_admin:
     admin_pass = st.sidebar.text_input("رمز عبور ادمین را وارد کنید:", type="password", key="sidebar_admin_pass")
     if st.sidebar.button("ورود به ادمین"):
-        # رمز عبور جدید تنظیم شده روی 2613
         if admin_pass == "2613":
             st.session_state.is_admin = True
             st.sidebar.success("با موفقیت به عنوان ادمین وارد شدید!")
@@ -165,26 +164,27 @@ if choice == "🛒 ثبت فروش / بررسی کالا":
                 st.warning("⚠️ کالایی با این کد در سیستم ثبت نشده است.")
 
 # ==========================================
-# بخش 2: مدیریت انبار (مخصوص ادمین)
+# بخش 2: مدیریت انبار (جستجو برای همه، ویرایش فقط ادمین)
 # ==========================================
 elif choice == "📦 مدیریت انبار":
-    if not st.session_state.is_admin:
-        st.error("🔒 دسترسی محدود! این بخش فقط مخصوص ادمین است. لطفاً از منوی سمت چپ (سایدبار) با رمز عبور ادمین وارد شوید.")
-    else:
-        st.header("📦 لیست و مدیریت محصولات انبار")
-        
-        conn = sqlite3.connect(DB_NAME)
-        df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام دستگاه/کالا', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
-        conn.close()
+    st.header("📦 لیست و جستجوی محصولات انبار")
+    
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام دستگاه/کالا', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
+    conn.close()
 
-        search = st.text_input("🔍 جستجوی سریع (نام یا کد):")
-        if search:
-            df = df[(df['نام دستگاه/کالا'].str.contains(search, na=False)) | (df['کد کالا'].str.contains(search, na=False))]
+    # قابلیت جستجوی آزاد حتی با وارد کردن مقداری از کلمه اجناس (حساس نبودن به کوچک و بزرگ بودن حروف)
+    search = st.text_input("🔍 جستجوی سریع (نام یا کد - پشتیبانی از سرچ جزئی):")
+    if search:
+        df = df[(df['نام دستگاه/کالا'].str.contains(search, na=False, case=False)) | (df['کد کالا'].str.contains(search, na=False, case=False))]
 
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
-        st.markdown("---")
-        st.subheader("ویرایش یا حذف کالا")
+    st.markdown("---")
+    
+    # بخش ویرایش و حذف کالا فقط برای ادمین فعال است
+    if st.session_state.is_admin:
+        st.subheader("🛠️ ویرایش یا حذف کالا (مخصوص ادمین)")
         
         manage_mode = st.radio("روش انتخاب کالا:", ("ورود دستی کد", "اسکن با دوربین (اسکنر)"), key="manage_mode")
         edit_code = ""
@@ -238,6 +238,8 @@ elif choice == "📦 مدیریت انبار":
                         st.rerun()
             else:
                 st.warning("⚠️ کالایی با این کد در انبار یافت نشد.")
+    else:
+        st.info("🔒 برای ویرایش یا حذف کالا، لطفاً از منوی سمت چپ (سایدبار) با رمز ادمین وارد شوید.")
 
 # ==========================================
 # بخش 3: افزودن کالای جدید (مخصوص ادمین)
@@ -250,7 +252,6 @@ elif choice == "➕ افزودن کالای جدید":
         
         add_mode = st.radio("روش ورود کد کالا:", ("ورود دستی", "اسکن با دوربین (اسکنر)"), key="add_mode")
         
-        # مدیریت مقدار بارکد اسکن شده برای قرارگیری خودکار در فیلد
         if "scanned_add_code" not in st.session_state:
             st.session_state.scanned_add_code = ""
 
@@ -264,7 +265,6 @@ elif choice == "➕ افزودن کالای جدید":
             else:
                 st.error("کتابخانه اسکنر نصب نیست.")
         
-        # اگر کاربر حالت دستی را انتخاب کند، فیلد خالی یا مقدار قبلی باشد
         default_val = st.session_state.scanned_add_code if add_mode == "اسکن با دوربین (اسکنر)" else ""
         
         p_code = st.text_input("کد / بارکد کالا *", value=default_val, key="p_code_input")
@@ -273,8 +273,14 @@ elif choice == "➕ افزودن کالای جدید":
         
         col1, col2 = st.columns(2)
         with col1:
-            p_buy = st.number_input("قیمت خرید (تومان)", min_value=0, step=10000, key="p_buy_input")
-            p_sell = st.number_input("قیمت فروش (تومان)", min_value=0, step=10000, key="p_sell_input")
+            p_buy = st.number_input("قیمت خرید (تومان)", min_value=0, step=1000, key="p_buy_input")
+            # جدا کردن سه رقم سه رقم اعداد برای خوانایی بهتر قیمت خرید
+            st.markdown(f"<p style='color: #555; font-size: 13px; margin-top: -15px;'>مبلغ: <b>{p_buy:,.0f}</b> تومان</p>", unsafe_allow_html=True)
+            
+            p_sell = st.number_input("قیمت فروش (تومان)", min_value=0, step=1000, key="p_sell_input")
+            # جدا کردن سه رقم سه رقم اعداد برای خوانایی بهتر قیمت فروش
+            st.markdown(f"<p style='color: #555; font-size: 13px; margin-top: -15px;'>مبلغ: <b>{p_sell:,.0f}</b> تومان</p>", unsafe_allow_html=True)
+            
         with col2:
             p_stock = st.number_input("موجودی اولیه (تعداد)", min_value=0, step=1, key="p_stock_input")
 
@@ -290,7 +296,7 @@ elif choice == "➕ افزودن کالای جدید":
                     conn.commit()
                     conn.close()
                     st.success(f"کالای '{p_name}' با موفقیت در انبار ثبت شد.")
-                    st.session_state.scanned_add_code = "" # پاک کردن حافظه موقت اسکنر
+                    st.session_state.scanned_add_code = ""
                 except sqlite3.IntegrityError:
                     st.error("این کد کالا قبلاً در سیستم ثبت شده است!")
 
