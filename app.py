@@ -6,7 +6,7 @@ import jdatetime
 import pytz
 import urllib.parse
 
-# ایمپورت اسکنر حرفه‌ای
+# ایمپورت اسکنر حرفه‌ای و خودکار بارکد
 try:
     from streamlit_qrcode_scanner import qrcode_scanner
     HAS_SCANNER_PKG = True
@@ -14,16 +14,32 @@ except ImportError:
     HAS_SCANNER_PKG = False
 
 # ==========================================
-# تنظیمات صفحه و زمان ایران
+# تنظیمات صفحه (عریض برای دسکتاپ و موبایل)
 # ==========================================
-st.set_page_config(page_title="سیستم جامع فروشگاه", page_icon="🚗", layout="wide")
+st.set_page_config(page_title="مدیریت انبار و فروشگاه", page_icon="🚗", layout="wide")
 
-# CSS اصلاح شده (بدون باگ به هم ریختگی کلمات)
+# CSS امن و اصلاح‌شده (بدون باگ به هم ریختگی کلمات)
 st.markdown("""
 <style>
-    .stMarkdown, p, h1, h2, h3, h4, label { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important; }
-    .stButton>button { width: 100%; border-radius: 8px; }
-    .invoice-box { border: 2px dashed #4CAF50; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #333; margin-top: 15px; direction: rtl; text-align: right; }
+    .stMarkdown, p, h1, h2, h3, h4, label {
+        direction: rtl;
+        text-align: right;
+        font-family: 'Tahoma', sans-serif !important;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 8px;
+    }
+    .invoice-box {
+        border: 2px dashed #4CAF50;
+        padding: 20px;
+        border-radius: 10px;
+        background-color: #f9f9f9;
+        color: #333;
+        margin-top: 15px;
+        direction: rtl;
+        text-align: right;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -32,18 +48,19 @@ def get_iran_time():
     return datetime.now(iran_tz)
 
 # ==========================================
-# توابع و آپدیت دیتابیس (بدون حذف اطلاعات قبلی)
+# توابع دیتابیس SQLite
 # ==========================================
 DB_NAME = "inventory.db"
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    # جدول کالاها
+    # جدول محصولات
     c.execute('''CREATE TABLE IF NOT EXISTS products
                  (code TEXT PRIMARY KEY, name TEXT, category TEXT,
                   purchase_price REAL, sale_price REAL, stock INTEGER)''')
-    # اضافه کردن فیلد خودرو سازگار در صورت عدم وجود
+    
+    # ارتقاء جدول محصولات برای اضافه شدن ماشین سازگار (بدون پاک شدن اطلاعات قبلی)
     c.execute("PRAGMA table_info(products)")
     cols = [col[1] for col in c.fetchall()]
     if 'compatible_cars' not in cols:
@@ -51,9 +68,11 @@ def init_db():
 
     # جدول فروش
     c.execute('''CREATE TABLE IF NOT EXISTS sales
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT, name TEXT, 
-                  quantity INTEGER, sale_price REAL, sale_date TEXT, timestamp DATETIME)''')
-    # ارتقاء جدول فروش برای باشگاه مشتریان و اجرت
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  product_code TEXT, name TEXT, quantity INTEGER,
+                  sale_price REAL, sale_date TEXT, timestamp DATETIME)''')
+                  
+    # ارتقاء جدول فروش برای اطلاعات مشتری، اجرت و سود (بدون پاک شدن اطلاعات قبلی)
     c.execute("PRAGMA table_info(sales)")
     sales_cols = [col[1] for col in c.fetchall()]
     if 'customer_name' not in sales_cols:
@@ -63,7 +82,7 @@ def init_db():
         c.execute("ALTER TABLE sales ADD COLUMN install_fee REAL DEFAULT 0")
         c.execute("ALTER TABLE sales ADD COLUMN net_profit REAL DEFAULT 0")
 
-    # جدول جدید: دفتر حساب (چک و اقساط)
+    # جدول جدید: دفتر حساب دفتری و چک
     c.execute('''CREATE TABLE IF NOT EXISTS ledger
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, record_type TEXT, person_name TEXT, 
                   amount REAL, due_date TEXT, description TEXT, status TEXT, timestamp DATETIME)''')
@@ -80,117 +99,148 @@ def get_low_stock_products():
 init_db()
 
 # ==========================================
-# مدیریت وضعیت سیستم
+# مدیریت وضعیت سیستم (Session State)
 # ==========================================
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 if "last_invoice" not in st.session_state:
     st.session_state.last_invoice = None
+if "auto_code" not in st.session_state:
+    st.session_state.auto_code = ""
 
 # ==========================================
 # منوی کناری (سایدبار) و بخش ورود ادمین
 # ==========================================
-st.sidebar.title("🚗 مدیریت فروشگاه اسپرت")
+st.sidebar.title("🚗 سیستم مدیریت فروشگاه")
 st.sidebar.markdown("---")
 
-menu = ["🛒 ثبت فروش و صدور فاکتور", "📦 مدیریت انبار", "➕ افزودن کالای جدید", "📊 گزارش‌های مالی", "📒 دفتر حساب (چک و اقساط)"]
+menu = ["🛒 ثبت فروش / بررسی کالا", "📦 مدیریت انبار", "➕ افزودن کالای جدید", "📊 گزارش‌ها", "📒 دفتر حساب (چک و اقساط)"]
 choice = st.sidebar.radio("منوی اصلی:", menu)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔐 بخش مدیریت (ادمین)")
 if not st.session_state.is_admin:
-    admin_pass = st.sidebar.text_input("رمز عبور ادمین:", type="password", key="sidebar_admin_pass")
+    admin_pass = st.sidebar.text_input("رمز عبور ادمین را وارد کنید:", type="password", key="sidebar_admin_pass")
     if st.sidebar.button("ورود به ادمین"):
         if admin_pass == "2613":
             st.session_state.is_admin = True
-            st.sidebar.success("شما ادمین هستید ✅")
+            st.sidebar.success("با موفقیت به عنوان ادمین وارد شدید!")
             st.rerun()
         else:
-            st.sidebar.error("رمز اشتباه است!")
+            st.sidebar.error("رمز عبور اشتباه است!")
 else:
-    st.sidebar.success("دسترسی ادمین: فعال 🔓")
+    st.sidebar.success("شما ادمین هستید ✅")
+    
+    # دکمه ریست کلی سیستم (مخصوص ادمین)
+    st.sidebar.markdown("---")
+    st.sidebar.warning("⚠️ ناحیه خطرناک")
+    if st.sidebar.button("🗑️ پاک کردن کل داده‌ها و ریست سیستم"):
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        c.execute("DROP TABLE IF EXISTS products")
+        c.execute("DROP TABLE IF EXISTS sales")
+        c.execute("DROP TABLE IF EXISTS ledger")
+        conn.commit()
+        conn.close()
+        init_db()
+        st.sidebar.success("سیستم با موفقیت پاک و ریست شد!")
+        st.rerun()
+
     if st.sidebar.button("خروج از حساب ادمین"):
         st.session_state.is_admin = False
         st.rerun()
 
+# هشدار کمبود موجودی در سایدبار
 low_stock_df = get_low_stock_products()
 if not low_stock_df.empty:
     st.sidebar.markdown("---")
-    st.sidebar.error("⚠️ هشدار موجودی:")
+    st.sidebar.error("⚠️ هشدار کمبود موجودی:")
     for _, row in low_stock_df.iterrows():
-        st.sidebar.warning(f"کالای '{row['name']}' ({row['stock']} عدد)")
+        st.sidebar.warning(f"کالای '{row['name']}' فقط {row['stock']} عدد")
 
 # ==========================================
-# بخش 1: ثبت فروش، اجرت نصب و صدور فاکتور دیجیتال
+# بخش 1: ثبت فروش و بررسی کالا (عمومی برای همه)
 # ==========================================
-if choice == "🛒 ثبت فروش و صدور فاکتور":
+if choice == "🛒 ثبت فروش / بررسی کالا":
     st.header("🛒 ثبت فروش و صدور فاکتور مشتری")
     
-    col1, col2 = st.columns([1.2, 2])
+    col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.info("انتخاب کالا (بارکد یا نام)")
-        scan_method = st.radio("روش جستجو:", ("اسکنر دوربین", "ورود دستی / بارکدخوان", "جستجوی نام/مدل ماشین"))
+        st.info("🔹 روش ورود کالا: از طریق بارکدخوان فیزیکی، اسکنر دوربین یا جستجوی نام کالا.")
+        scan_method = st.radio("انتخاب روش:", ("کیبورد / بارکدخوان فیزیکی", "دوربین (اسکنر خودکار)", "جستجوی نام کالا"))
+        
         code_input = ""
         
-        if scan_method == "ورود دستی / بارکدخوان":
-            code_input = st.text_input("کد کالا را وارد/اسکن کنید:", key="barcode_input")
-        elif scan_method == "اسکنر دوربین":
+        if scan_method == "کیبورد / بارکدخوان فیزیکی":
+            code_input = st.text_input("کد کالا را اینجا اسکن یا وارد کنید:", key="barcode_input")
+            
+        elif scan_method == "دوربین (اسکنر خودکار)":
             if HAS_SCANNER_PKG:
+                st.markdown("📷 **دوربین فعال است. بارکد را مقابل دوربین بگیرید:**")
                 scanned_code = qrcode_scanner(key='pro_scanner')
                 if scanned_code:
                     code_input = scanned_code
+                    st.success(f"✅ اسکن موفق: {code_input}")
             else:
-                st.error("اسکنر نصب نیست.")
-        elif scan_method == "جستجوی نام/مدل ماشین":
-            search_q = st.text_input("نام کالا یا مدل ماشین (مثلاً 206) را جستجو کنید:")
-            if search_q:
+                st.error("کتابخانه اسکنر نصب نیست.")
+                
+        elif scan_method == "جستجوی نام کالا":
+            search_sale_query = st.text_input("نام بخشی از کالا را برای فروش وارد کنید:")
+            if search_sale_query:
                 conn = sqlite3.connect(DB_NAME)
-                match_df = pd.read_sql_query(f"SELECT code, name, compatible_cars FROM products WHERE name LIKE '%{search_q}%' OR compatible_cars LIKE '%{search_q}%'", conn)
+                match_df = pd.read_sql_query(f"SELECT code, name, compatible_cars FROM products WHERE name LIKE '%{search_sale_query}%' OR compatible_cars LIKE '%{search_sale_query}%'", conn)
                 conn.close()
                 if not match_df.empty:
                     opts = (match_df['name'] + " (مناسب: " + match_df['compatible_cars'] + ") - کد: " + match_df['code']).tolist()
-                    sel = st.selectbox("کالا را انتخاب کنید:", opts)
-                    code_input = sel.split("کد: ")[1].strip()
+                    selected_name = st.selectbox("کالای مورد نظر را انتخاب کنید:", opts)
+                    code_input = selected_name.split("کد: ")[1].strip()
+                else:
+                    st.warning("کالایی با این نام پیدا نشد.")
 
     with col2:
         if code_input:
             conn = sqlite3.connect(DB_NAME)
             c = conn.cursor()
-            c.execute("SELECT * FROM products WHERE code=?", (code_input,))
+            c.execute("SELECT code, name, category, purchase_price, sale_price, stock, compatible_cars FROM products WHERE code=?", (code_input,))
             product = c.fetchone()
             conn.close()
 
             if product:
-                # product: 0:code, 1:name, 2:cat, 3:buy, 4:sell, 5:stock, 6:cars
-                st.subheader(f"📦 {product[1]}")
-                st.markdown(f"**مناسب برای:** {product[6]}")
-                st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان")
-                if st.session_state.is_admin:
-                    st.markdown(f"**قیمت خرید:** {product[3]:,.0f} تومان (فقط ادمین)")
-                st.markdown(f"**موجودی انبار:** {product[5]} عدد")
+                st.subheader(f"📦 مشخصات دستگاه/کالا: {product[1]}")
+                st.markdown(f"**دسته‌بندی:** {product[2]}")
+                st.markdown(f"**مناسب برای خودروی:** {product[6]}")
                 
+                stock_color = "red" if product[5] < 3 else "green"
+                st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان")
+                
+                # نمایش قیمت خرید فقط برای ادمین
+                if st.session_state.is_admin:
+                    st.markdown(f"**قیمت خرید (محرمانه):** <span style='color:orange;'>{product[3]:,.0f} تومان</span>", unsafe_allow_html=True)
+                
+                st.markdown(f"**موجودی انبار:** <span style='color:{stock_color}; font-size:20px; font-weight:bold;'>{product[5]}</span> عدد", unsafe_allow_html=True)
+
                 st.markdown("---")
                 with st.form("sale_form"):
-                    st.markdown("**اطلاعات فروش و مشتری (باشگاه مشتریان)**")
-                    f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1, value=1)
-                    f_install = st.number_input("اجرت نصب (تومان) - اختیاری", min_value=0, step=10000, value=0)
+                    st.markdown("📝 **اطلاعات فروش و باشگاه مشتریان**")
+                    sale_qty = st.number_input("تعداد فروش", min_value=1, max_value=product[5] if product[5] > 0 else 1, value=1)
+                    install_fee = st.number_input("اجرت نصب (تومان) - اختیاری", min_value=0, step=10000, value=0)
                     
                     cc1, cc2, cc3 = st.columns(3)
                     with cc1: c_name = st.text_input("نام مشتری (اختیاری)")
-                    with cc2: c_phone = st.text_input("شماره موبایل")
+                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)")
                     with cc3: c_car = st.text_input("مدل ماشین مشتری")
-                    
-                    submit_sale = st.form_submit_button("✅ ثبت نهایی و صدور فاکتور")
+
+                    submit_sale = st.form_submit_button("✅ ثبت نهایی فروش و کسر از انبار")
 
                     if submit_sale:
-                        if product[5] >= f_qty:
-                            new_stock = product[5] - f_qty
+                        if product[5] >= sale_qty:
+                            new_stock = product[5] - sale_qty
                             now_dt = get_iran_time()
-                            now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
+                            now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M:%S')
                             
-                            net_profit = ((product[4] - product[3]) * f_qty) + f_install
-                            total_bill = (product[4] * f_qty) + f_install
+                            net_profit = ((product[4] - product[3]) * sale_qty) + install_fee
+                            total_bill = (product[4] * sale_qty) + install_fee
                             
                             conn = sqlite3.connect(DB_NAME)
                             c = conn.cursor()
@@ -199,40 +249,40 @@ if choice == "🛒 ثبت فروش و صدور فاکتور":
                                       (product_code, name, quantity, sale_price, sale_date, timestamp, 
                                        customer_name, customer_phone, car_model, install_fee, net_profit) 
                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                                      (code_input, product[1], f_qty, product[4], now_str, now_dt,
-                                       c_name, c_phone, c_car, f_install, net_profit))
+                                      (code_input, product[1], sale_qty, product[4], now_str, now_dt,
+                                       c_name, c_phone, c_car, install_fee, net_profit))
                             conn.commit()
                             conn.close()
                             
                             st.session_state.last_invoice = {
                                 "date": now_str, "c_name": c_name or "مشتری نقدی",
                                 "c_phone": c_phone, "c_car": c_car, "p_name": product[1],
-                                "qty": f_qty, "price": product[4], "install": f_install, "total": total_bill
+                                "qty": sale_qty, "price": product[4], "install": install_fee, "total": total_bill
                             }
-                            st.success("فروش با موفقیت ثبت شد!")
+                            st.success(f"فروش با موفقیت ثبت شد!")
                             st.rerun()
                         else:
-                            st.error("موجودی کافی نیست!")
+                            st.error("موجودی کالا برای این تعداد فروش کافی نیست!")
             else:
-                st.warning("کالایی یافت نشد.")
+                st.warning("⚠️ کالایی با این کد در سیستم ثبت نشده است.")
 
-    # نمایش فاکتور دیجیتال آخرین فروش
+    # نمایش فاکتور دیجیتال آخرین فروش و دکمه ارسال
     if st.session_state.last_invoice:
         inv = st.session_state.last_invoice
         st.markdown("---")
         st.subheader("🧾 فاکتور دیجیتال مشتری")
         
-        invoice_text = f"""🧾 فاکتور فروشگاه اسپرت
+        invoice_text = f"""🧾 فاکتور فروشگاه
 تاریخ: {inv['date']}
 👤 مشتری: {inv['c_name']}
 🚗 خودرو: {inv['c_car']}
 -------------------
-📦 دستگاه/کالا: {inv['p_name']}
+📦 کالا: {inv['p_name']}
 🔢 تعداد: {inv['qty']}
 💵 قیمت واحد: {inv['price']:,} تومان
 🔧 اجرت نصب: {inv['install']:,} تومان
 -------------------
-💰 مبلغ کل پرداختی: {inv['total']:,} تومان
+💰 جمع کل فاکتور: {inv['total']:,} تومان
 ✨ از خرید شما سپاسگزاریم ✨"""
 
         st.markdown(f"<div class='invoice-box'>{invoice_text.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
@@ -253,159 +303,242 @@ if choice == "🛒 ثبت فروش و صدور فاکتور":
                 st.rerun()
 
 # ==========================================
-# بخش 2: مدیریت انبار (سانسور قیمت خرید)
+# بخش 2: مدیریت انبار (لیست کامل، اجناس ناموجود و ابزار ادمین)
 # ==========================================
 elif choice == "📦 مدیریت انبار":
-    st.header("📦 مدیریت انبار مرکزی")
+    st.header("📦 انبار مرکزی فروشگاه")
     
     conn = sqlite3.connect(DB_NAME)
-    df = pd.read_sql_query("SELECT code, name, compatible_cars, category, purchase_price, sale_price, stock FROM products", conn)
+    df = pd.read_sql_query("SELECT code as 'کد کالا', name as 'نام دستگاه/کالا', compatible_cars as 'خودروهای سازگار', category as 'دسته‌بندی', purchase_price as 'قیمت خرید', sale_price as 'قیمت فروش', stock as 'موجودی' FROM products", conn)
     conn.close()
 
-    # تغییر نام ستون‌ها برای نمایش
-    rename_cols = {
-        'code': 'کد کالا', 'name': 'نام کالا', 'compatible_cars': 'خودروهای سازگار',
-        'category': 'دسته‌بندی', 'sale_price': 'قیمت فروش', 'stock': 'موجودی'
-    }
-    
-    if st.session_state.is_admin:
-        rename_cols['purchase_price'] = 'قیمت خرید (محرمانه)'
-    else:
-        df = df.drop(columns=['purchase_price']) # مخفی کردن قیمت خرید برای همه غیر از ادمین
+    # مخفی کردن قیمت خرید برای افراد غیر ادمین
+    if not st.session_state.is_admin:
+        df = df.drop(columns=['قیمت خرید'])
 
-    df = df.rename(columns=rename_cols)
+    # ---- بخش اول: لیست کامل تمام کالاها با تمامی اطلاعات و جستجوی سریع ----
+    st.subheader("📋 لیست کامل تمام کالاها")
     
-    search = st.text_input("🔍 جستجو در کل انبار (نام، خودرو، دسته):")
+    search_col1, search_col2 = st.columns([2, 1])
+    with search_col1:
+        search = st.text_input("🔍 جستجوی سریع (نام، ماشین، دسته یا کد):")
+    with search_col2:
+        scan_in_inventory = st.checkbox("فعال‌سازی اسکنر برای جستجو")
+
+    query_code = ""
+    if scan_in_inventory and HAS_SCANNER_PKG:
+        st.info("بارکد کالا را برای یافتن در انبار اسکن کنید:")
+        scanned_inv = qrcode_scanner(key='inventory_search_scanner')
+        if scanned_inv:
+            query_code = scanned_inv
+            st.success(f"کد اسکن شده: {query_code}")
+
+    display_df = df.copy()
     if search:
-        mask = df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)
-        display_df = df[mask]
-    else:
-        display_df = df
+        mask = display_df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)
+        display_df = display_df[mask]
+    elif query_code:
+        display_df = display_df[display_df['کد کالا'] == query_code]
 
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
+    st.markdown("---")
+
+    # ---- بخش دوم: اجناس ناموجود (موجودی صفر) دقیقاً در زیر بخش اول ----
+    st.subheader("🔴 اجناس ناموجود (موجودی صفر)")
+    out_of_stock_df = df[df['موجودی'] == 0]
+    if not out_of_stock_df.empty:
+        st.error(f"⚠️ تعداد {len(out_of_stock_df)} کالا موجودی‌شان تمام شده و صفر است:")
+        st.dataframe(out_of_stock_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ عالی! هیچ کالایی با موجودی صفر (ناموجود) در انبار وجود ندارد.")
+
+    st.markdown("---")
+    
+    # ---- بخش سوم: مدیریت، جستجو، ویرایش و حذف (فقط ادمین) ----
     if st.session_state.is_admin:
-        st.markdown("---")
-        st.subheader("🛠️ ویرایش / حذف کالا")
-        edit_code = st.text_input("کد کالا برای ویرایش را وارد/اسکن کنید:")
+        st.subheader("🛠️ ویرایش یا حذف کالا (مخصوص ادمین)")
+        
+        manage_mode = st.radio("روش انتخاب کالا:", ("جستجوی نام یا کد", "ورود دستی کد", "اسکن با دوربین (اسکنر)"), key="manage_mode")
+        edit_code = ""
+        
+        if manage_mode == "جستجوی نام یا کد":
+            search_edit_query = st.text_input("بخشی از نام یا کد کالا را برای ویرایش/حذف جستجو کنید:", key="search_edit_query_input")
+            if search_edit_query:
+                conn = sqlite3.connect(DB_NAME)
+                match_df = pd.read_sql_query(f"SELECT code, name FROM products WHERE name LIKE '%{search_edit_query}%' OR code LIKE '%{search_edit_query}%'", conn)
+                conn.close()
+                if not match_df.empty:
+                    options = (match_df['code'] + " - " + match_df['name']).tolist()
+                    selected_option = st.selectbox("کالای مورد نظر را از لیست انتخاب کنید:", options, key="select_edit_product")
+                    if selected_option:
+                        edit_code = selected_option.split(" - ")[0]
+                else:
+                    st.warning("کالایی با این مشخصات پیدا نشد.")
+                    
+        elif manage_mode == "اسکن با دوربین (اسکنر)":
+            if HAS_SCANNER_PKG:
+                st.info("بارکد کالا را برای ویرایش/حذف اسکن کنید:")
+                scanned_edit = qrcode_scanner(key='manage_scanner_widget')
+                if scanned_edit:
+                    edit_code = scanned_edit
+                    st.success(f"کد اسکن شد: {edit_code}")
+            else:
+                st.error("کتابخانه اسکنر نصب نیست.")
+        else:
+            edit_code = st.text_input("کد کالای مورد نظر را وارد کنید:", key="manual_edit_input")
+        
         if edit_code:
             conn = sqlite3.connect(DB_NAME)
             c = conn.cursor()
-            c.execute("SELECT * FROM products WHERE code=?", (edit_code,))
+            c.execute("SELECT code, name, category, purchase_price, sale_price, stock, compatible_cars FROM products WHERE code=?", (edit_code,))
             prod = c.fetchone()
             conn.close()
 
             if prod:
-                e_name = st.text_input("نام کالا", prod[1])
-                e_car = st.text_input("خودروهای سازگار", prod[6] if len(prod)>6 else "عمومی")
-                e_buy = st.number_input("قیمت خرید", value=int(prod[3]), step=10000)
-                e_sell = st.number_input("قیمت فروش", value=int(prod[4]), step=10000)
-                e_stock = st.number_input("موجودی", value=int(prod[5]))
-                
-                c1, c2 = st.columns(2)
-                if c1.button("💾 ذخیره تغییرات", type="primary"):
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("UPDATE products SET name=?, compatible_cars=?, purchase_price=?, sale_price=?, stock=? WHERE code=?",
-                              (e_name, e_car, e_buy, e_sell, e_stock, edit_code))
-                    conn.commit()
-                    conn.close()
-                    st.success("ویرایش شد!")
-                    st.rerun()
-                if c2.button("🗑️ حذف کالا"):
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("DELETE FROM products WHERE code=?", (edit_code,))
-                    conn.commit()
-                    conn.close()
-                    st.warning("حذف شد!")
-                    st.rerun()
+                st.info(f"در حال ویرایش کالا: {prod[1]}")
+                e_name = st.text_input("نام دستگاه/کالا", prod[1], key="e_name")
+                e_car = st.text_input("خودروهای سازگار", prod[6], key="e_car")
+                e_cat = st.text_input("دسته‌بندی", prod[2], key="e_cat")
+                e_buy = st.number_input("قیمت خرید", value=int(prod[3]), step=1000, key="e_buy")
+                e_sell = st.number_input("قیمت فروش", value=int(prod[4]), step=1000, key="e_sell")
+                e_stock = st.number_input("موجودی", value=int(prod[5]), step=1, key="e_stock")
+
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    if st.button("💾 ذخیره تغییرات", type="primary"):
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        c.execute("UPDATE products SET name=?, category=?, purchase_price=?, sale_price=?, stock=?, compatible_cars=? WHERE code=?",
+                                  (e_name, e_cat, e_buy, e_sell, e_stock, e_car, edit_code))
+                        conn.commit()
+                        conn.close()
+                        st.success("اطلاعات کالا با موفقیت به‌روزرسانی شد.")
+                        st.rerun()
+                with col_c2:
+                    if st.button("🗑️ حذف کالا", type="secondary"):
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        c.execute("DELETE FROM products WHERE code=?", (edit_code,))
+                        conn.commit()
+                        conn.close()
+                        st.warning("کالا از انبار حذف شد.")
+                        st.rerun()
+            else:
+                st.warning("⚠️ کالایی با این کد در انبار یافت نشد.")
+    else:
+        st.info("🔒 برای ویرایش یا حذف کالا، لطفاً از منوی سمت چپ (سایدبار) با رمز ادمین وارد شوید.")
 
 # ==========================================
-# بخش 3: افزودن کالا (جای‌گذاری خودکار اسکنر)
+# بخش 3: افزودن کالای جدید (مخصوص ادمین - بدون نیاز اجباری به بارکد)
 # ==========================================
 elif choice == "➕ افزودن کالای جدید":
     if not st.session_state.is_admin:
-        st.error("🔒 فقط ادمین مجاز به افزودن کالا است.")
+        st.error("🔒 دسترسی محدود! این بخش فقط مخصوص ادمین است.")
     else:
-        st.header("➕ تعریف کالای جدید")
+        st.header("➕ تعریف کالای جدید در انبار")
         
-        # مدیریت هوشمند اسکنر
-        if "auto_code" not in st.session_state:
-            st.session_state.auto_code = ""
-
-        if HAS_SCANNER_PKG:
-            st.info("بارکد را مقابل دوربین بگیرید تا خودکار در فرم پر شود:")
-            scanned = qrcode_scanner(key='add_scanner')
-            if scanned:
-                st.session_state.auto_code = scanned
-
-        p_code = st.text_input("کد کالا / بارکد:", value=st.session_state.auto_code)
-        p_name = st.text_input("نام دستگاه / کالا *")
-        p_car = st.text_input("مناسب برای خودروی (مثال: 206، پارس، عمومی):", "عمومی")
-        p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "سیستم صوتی", "دزدگیر و ردیاب", "سایر"])
+        add_mode = st.radio("روش ورود کد کالا:", ("ورود دستی یا بدون بارکد", "اسکن با دوربین (اسکنر)"), key="add_mode")
         
-        col1, col2, col3 = st.columns(3)
-        with col1: p_buy = st.number_input("قیمت خرید", min_value=0, step=10000)
-        with col2: p_sell = st.number_input("قیمت فروش", min_value=0, step=10000)
-        with col3: p_stock = st.number_input("موجودی", min_value=0, step=1)
-
-        if st.button("➕ ثبت در انبار", type="primary"):
-            if not p_name:
-                st.error("نام کالا الزامی است!")
+        if add_mode == "اسکن با دوربین (اسکنر)":
+            if HAS_SCANNER_PKG:
+                st.info("بارکد جدید را مقابل دوربین بگیرید:")
+                scanned = qrcode_scanner(key='add_scanner_widget')
+                if scanned:
+                    st.session_state.auto_code = scanned
+                    st.success(f"بارکد با موفقیت اسکن شد: {scanned}")
             else:
-                final_code = p_code.strip() if p_code.strip() else "AUTO-" + get_iran_time().strftime("%Y%m%d%H%M%S")
+                st.error("کتابخانه اسکنر نصب نیست.")
+        
+        default_val = st.session_state.auto_code if add_mode == "اسکن با دوربین (اسکنر)" else ""
+        
+        p_code = st.text_input("کد / بارکد کالا (اختیاری - اگر خالی باشد خودکار ساخته می‌شود)", value=default_val, key="p_code_input")
+        p_name = st.text_input("نام دستگاه / کالا *", key="p_name_input")
+        p_car = st.text_input("مناسب برای خودروی (مثال: 206، پارس، عمومی):", "عمومی")
+        p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "مانیتور و سیستم صوتی", "دزدگیر و ردیاب", "تزئینات و خوشبوکننده", "سایر"], key="p_cat_input")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            p_buy = st.number_input("قیمت خرید (تومان)", min_value=0, step=1000, key="p_buy_input")
+            st.markdown(f"<p style='color: #555; font-size: 13px; margin-top: -15px;'>مبلغ: <b>{p_buy:,.0f}</b> تومان</p>", unsafe_allow_html=True)
+            
+            p_sell = st.number_input("قیمت فروش (تومان)", min_value=0, step=1000, key="p_sell_input")
+            st.markdown(f"<p style='color: #555; font-size: 13px; margin-top: -15px;'>مبلغ: <b>{p_sell:,.0f}</b> تومان</p>", unsafe_allow_html=True)
+            
+        with col2:
+            p_stock = st.number_input("موجودی اولیه (تعداد)", min_value=0, step=1, key="p_stock_input")
+
+        if st.button("➕ ثبت نهایی کالا در انبار", type="primary"):
+            if not p_name.strip():
+                st.error("نام کالا الزامی است.")
+            else:
+                if not p_code.strip():
+                    p_code = "AUTO-" + get_iran_time().strftime("%Y%m%d%H%M%S")
                 try:
                     conn = sqlite3.connect(DB_NAME)
                     c = conn.cursor()
                     c.execute("INSERT INTO products (code, name, category, purchase_price, sale_price, stock, compatible_cars) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                              (final_code, p_name, p_cat, p_buy, p_sell, p_stock, p_car))
+                              (p_code, p_name, p_cat, p_buy, p_sell, p_stock, p_car))
                     conn.commit()
                     conn.close()
-                    st.success("✅ ثبت شد!")
-                    st.session_state.auto_code = "" # ریست کردن اسکنر
+                    st.success(f"کالای '{p_name}' با کد ({p_code}) با موفقیت در انبار ثبت شد.")
+                    st.session_state.auto_code = ""
                 except sqlite3.IntegrityError:
-                    st.error("این کد تکراری است.")
+                    st.error("این کد کالا قبلاً در سیستم ثبت شده است! لطفاً کد دیگری وارد کنید.")
 
 # ==========================================
 # بخش 4: گزارش‌ها (محاسبه سود خالص)
 # ==========================================
-elif choice == "📊 گزارش‌های مالی":
+elif choice == "📊 گزارش‌ها":
     if not st.session_state.is_admin:
-        st.error("🔒 فقط ادمین مجاز به مشاهده گزارش مالی است.")
+        st.error("🔒 دسترسی محدود! این بخش فقط مخصوص ادمین است.")
     else:
-        st.header("📊 گزارش مالی و سود خالص")
+        st.header("📊 گزارش‌های فروش و مالی")
+        
+        tab_daily, tab_monthly, tab_all = st.tabs(["📅 گزارش روزانه (۲۴ ساعت)", "📆 گزارش ماهانه (۳۱ روز)", "♾️ گزارش همیشگی"])
         
         conn = sqlite3.connect(DB_NAME)
-        full_df = pd.read_sql_query("SELECT * FROM sales", conn)
+        full_df = pd.read_sql_query("SELECT id as 'کد فاکتور', product_code as 'کد کالا', name as 'نام کالا', customer_name as 'مشتری', quantity as 'تعداد', sale_price as 'قیمت واحد', install_fee as 'اجرت نصب', net_profit as 'سود خالص', sale_date as 'تاریخ و ساعت', timestamp FROM sales", conn)
         conn.close()
 
         if not full_df.empty:
             full_df['timestamp'] = pd.to_datetime(full_df['timestamp'])
             now_dt = get_iran_time().replace(tzinfo=None)
-            
-            # رفع مشکل تایم‌زون پانداز
             full_df['timestamp'] = full_df['timestamp'].dt.tz_localize(None)
             
-            daily_df = full_df[full_df['timestamp'] >= (now_dt - timedelta(days=1))]
-            monthly_df = full_df[full_df['timestamp'] >= (now_dt - timedelta(days=31))]
+            daily_df = full_df[full_df['timestamp'] >= (now_dt - timedelta(days=1))].copy()
+            monthly_df = full_df[full_df['timestamp'] >= (now_dt - timedelta(days=31))].copy()
             
-            t1, t2 = st.tabs(["📅 فروش ۲۴ ساعت گذشته", "📆 فروش یک ماه گذشته"])
+            display_cols = ['کد فاکتور', 'نام کالا', 'مشتری', 'تعداد', 'قیمت واحد', 'اجرت نصب', 'سود خالص', 'تاریخ و ساعت']
             
-            with t1:
+            with tab_daily:
+                st.subheader("فروش ۲۴ ساعت گذشته")
                 if not daily_df.empty:
-                    daily_sale = (daily_df['quantity'] * daily_df['sale_price']).sum() + daily_df['install_fee'].sum()
-                    daily_profit = daily_df['net_profit'].sum()
-                    st.success(f"💳 جمع کل فروش: {daily_sale:,.0f} تومان  |  📈 سود خالص شما: {daily_profit:,.0f} تومان")
-                    st.dataframe(daily_df[['sale_date', 'name', 'customer_name', 'quantity', 'install_fee', 'net_profit']], hide_index=True)
-            with t2:
+                    daily_sale = (daily_df['تعداد'] * daily_df['قیمت واحد']).sum() + daily_df['اجرت نصب'].sum()
+                    daily_profit = daily_df['سود خالص'].sum()
+                    st.success(f"💰 جمع کل درآمد (با اجرت): {daily_sale:,.0f} تومان | 📈 سود خالص شما: {daily_profit:,.0f} تومان | 📦 تعداد: {daily_df['تعداد'].sum()} عدد")
+                    st.dataframe(daily_df[display_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("در ۲۴ ساعت گذشته فروشی ثبت نشده است.")
+                    
+            with tab_monthly:
+                st.subheader("فروش ۳۱ روز گذشته")
                 if not monthly_df.empty:
-                    m_sale = (monthly_df['quantity'] * monthly_df['sale_price']).sum() + monthly_df['install_fee'].sum()
-                    m_profit = monthly_df['net_profit'].sum()
-                    st.success(f"💳 کل فروش ماه: {m_sale:,.0f} تومان  |  📈 سود خالص ماه: {m_profit:,.0f} تومان")
-                    st.dataframe(monthly_df[['sale_date', 'name', 'customer_name', 'quantity', 'install_fee', 'net_profit']], hide_index=True)
+                    m_sale = (monthly_df['تعداد'] * monthly_df['قیمت واحد']).sum() + monthly_df['اجرت نصب'].sum()
+                    m_profit = monthly_df['سود خالص'].sum()
+                    st.success(f"💰 جمع کل درآمد: {m_sale:,.0f} تومان | 📈 سود خالص ماه: {m_profit:,.0f} تومان | 📦 تعداد: {monthly_df['تعداد'].sum()} عدد")
+                    st.dataframe(monthly_df[display_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("در ۳۱ روز گذشته فروشی ثبت نشده است.")
+                    
+            with tab_all:
+                st.subheader("تاریخچه کامل و همیشگی فروش‌ها")
+                a_sale = (full_df['تعداد'] * full_df['قیمت واحد']).sum() + full_df['اجرت نصب'].sum()
+                a_profit = full_df['سود خالص'].sum()
+                st.success(f"💰 کل درآمد تاریخی: {a_sale:,.0f} تومان | 📈 کل سود خالص تاریخی: {a_profit:,.0f} تومان")
+                st.dataframe(full_df[display_cols], use_container_width=True, hide_index=True)
         else:
-            st.info("فروشی ثبت نشده است.")
+            st.info("تا کنون هیچ فروشی در سیستم ثبت نشده است.")
 
 # ==========================================
 # بخش 5: دفتر حساب (چک و اقساط)
@@ -442,13 +575,13 @@ elif choice == "📒 دفتر حساب (چک و اقساط)":
             
             st.markdown("---")
             conn = sqlite3.connect(DB_NAME)
-            df = pd.read_sql_query(f"SELECT id, person_name as '{person_label}', amount as 'مبلغ', due_date as 'تاریخ سررسید', description as 'بابت', status as 'وضعیت' FROM ledger WHERE record_type='{l_type}'", conn)
+            df = pd.read_sql_query(f"SELECT id as 'شماره ردیف', person_name as '{person_label}', amount as 'مبلغ', due_date as 'تاریخ سررسید', description as 'بابت', status as 'وضعیت' FROM ledger WHERE record_type='{l_type}'", conn)
             conn.close()
             
             if not df.empty:
                 st.dataframe(df, hide_index=True, use_container_width=True)
                 
-                clr_id = st.number_input(f"برای تسویه/پاک کردن {title}، شماره ردیف (id) را وارد کنید:", min_value=0, key=f"clr_{l_type}")
+                clr_id = st.number_input(f"برای تسویه/پاک کردن {title}، شماره ردیف مربوطه را وارد کنید:", min_value=0, key=f"clr_{l_type}")
                 if st.button("✅ تسویه و حذف از دفتر", key=f"btn_{l_type}"):
                     conn = sqlite3.connect(DB_NAME)
                     c = conn.cursor()
