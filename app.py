@@ -18,11 +18,12 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="سیستم جامع فروشگاه", page_icon="🚗", layout="wide")
 
+# CSS اصلاح شده (بدون باگ به هم ریختگی کلمات)
 st.markdown("""
 <style>
-    .stMarkdown, p, h1, h2, h3, h4, label, div { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important; }
+    .stMarkdown, p, h1, h2, h3, h4, label { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important; }
     .stButton>button { width: 100%; border-radius: 8px; }
-    .invoice-box { border: 2px dashed #4CAF50; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #333; margin-top: 15px; }
+    .invoice-box { border: 2px dashed #4CAF50; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #333; margin-top: 15px; direction: rtl; text-align: right; }
 </style>
 """, unsafe_allow_html=True)
 
