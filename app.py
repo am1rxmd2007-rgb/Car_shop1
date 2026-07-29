@@ -105,8 +105,8 @@ if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 if "last_invoice" not in st.session_state:
     st.session_state.last_invoice = None
-if "auto_code" not in st.session_state:
-    st.session_state.auto_code = ""
+if "p_code_input" not in st.session_state:
+    st.session_state.p_code_input = ""
 
 # ==========================================
 # منوی کناری (سایدبار) و بخش ورود ادمین
@@ -445,14 +445,12 @@ elif choice == "➕ افزودن کالای جدید":
                 st.info("بارکد جدید را مقابل دوربین بگیرید:")
                 scanned = qrcode_scanner(key='add_scanner_widget')
                 if scanned:
-                    st.session_state.auto_code = scanned
+                    st.session_state.p_code_input = scanned
                     st.success(f"بارکد با موفقیت اسکن شد: {scanned}")
             else:
                 st.error("کتابخانه اسکنر نصب نیست.")
         
-        default_val = st.session_state.auto_code if add_mode == "اسکن با دوربین (اسکنر)" else ""
-        
-        p_code = st.text_input("کد / بارکد کالا (اختیاری - اگر خالی باشد خودکار ساخته می‌شود)", value=default_val, key="p_code_input")
+        p_code = st.text_input("کد / بارکد کالا (اختیاری - اگر خالی باشد خودکار ساخته می‌شود)", key="p_code_input")
         p_name = st.text_input("نام دستگاه / کالا *", key="p_name_input")
         p_car = st.text_input("مناسب برای خودروی (مثال: 206، پارس، عمومی):", "عمومی")
         p_cat = st.selectbox("دسته‌بندی", ["هدلایت و لامپ", "روکش و کفپوش", "مانیتور و سیستم صوتی", "دزدگیر و ردیاب", "تزئینات و خوشبوکننده", "سایر"], key="p_cat_input")
@@ -482,7 +480,7 @@ elif choice == "➕ افزودن کالای جدید":
                     conn.commit()
                     conn.close()
                     st.success(f"کالای '{p_name}' با کد ({p_code}) با موفقیت در انبار ثبت شد.")
-                    st.session_state.auto_code = ""
+                    st.session_state.p_code_input = "" # ریست کردن فیلد اسکنر
                 except sqlite3.IntegrityError:
                     st.error("این کد کالا قبلاً در سیستم ثبت شده است! لطفاً کد دیگری وارد کنید.")
 
