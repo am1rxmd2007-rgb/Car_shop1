@@ -20,13 +20,13 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="سیستم یکپارچه فروشگاه اسپرت", page_icon="🚗", layout="wide")
 
-# ویژگی جدید ۴: شخصی‌سازی ظاهر و حذف ردپای استریم‌لیت (Branding)
+# 🌟 اصلاح باگ منوی موبایل: هدر مخفی نمی‌شود تا دکمه همبرگری در موبایل کار کند
 st.markdown("""
 <style>
-    /* مخفی کردن المان‌های استریم‌لیت */
+    /* مخفی کردن منوی سه‌نقطه و فوتر استریم‌لیت برای شخصی‌سازی ظاهر */
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
+    header {background-color: transparent !important;}
     
     /* تنظیمات راست‌چین و فونت */
     .stMarkdown, p, h1, h2, h3, h4, label { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important; }
@@ -40,7 +40,7 @@ def get_iran_time():
     iran_tz = pytz.timezone('Asia/Tehran')
     return datetime.now(iran_tz)
 
-# ویژگی جدید ۲: تابع تبدیل دیتافریم به فایل اکسل
+# تابع تبدیل دیتافریم به فایل اکسل
 def convert_df_to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -167,7 +167,7 @@ else:
 
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
-# ابزارهای فقط ادمین در سایدبار (همراه با ویژگی ۵: هشدار هوشمند چک)
+# ابزارهای فقط ادمین در سایدبار
 if st.session_state.user_role == "Admin":
     st.sidebar.markdown("---")
     if os.path.exists(DB_NAME):
@@ -189,7 +189,6 @@ if st.session_state.user_role == "Admin":
             l_type = "طلب از:" if row['record_type'] == 'customer_debt' else "بدهی به:"
             due_date_str = row['due_date']
             
-            # پردازش هوشمند تاریخ برای هشدار
             try:
                 due_date_obj = jdatetime.datetime.strptime(due_date_str, '%Y/%m/%d').date()
                 diff_days = (due_date_obj - today_jalali).days
@@ -389,7 +388,6 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
 
     st.dataframe(dsp_df, use_container_width=True, hide_index=True)
     
-    # ویژگی جدید: خروجی اکسل برای انبار
     if st.session_state.user_role == "Admin" and not dsp_df.empty:
         excel_data = convert_df_to_excel(dsp_df)
         st.download_button(label="📥 دانلود لیست انبار (فایل Excel)", data=excel_data, file_name=f"Inventory_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -491,6 +489,8 @@ elif choice == "🔍 انبارگردانی فیزیکی":
                     conn.commit()
                     conn.close()
                     st.success("شمارش شما ثبت شد و برای تایید به پنل مدیریت ارسال گردید.")
+        else:
+            st.warning("⚠️ کالایی با این مشخصات یافت نشد.")
 
 # ==========================================
 # افزودن کالا (مختص ادمین)
@@ -529,12 +529,11 @@ elif choice == "➕ افزودن کالا":
             except: st.error("کد تکراری است!")
 
 # ==========================================
-# داشبورد و گزارش‌ها (اضافه شدن سرمایه کل و اکسل)
+# داشبورد و گزارش‌ها
 # ==========================================
 elif choice == "📊 گزارش‌ها و داشبورد":
     st.header("📊 داشبورد مدیریت مالی")
     
-    # ویژگی جدید ۱: محاسبه ارزش کل سرمایه خوابیده
     conn = sqlite3.connect(DB_NAME)
     inv_df_capital = pd.read_sql_query("SELECT purchase_price, stock FROM products", conn)
     total_capital = (inv_df_capital['purchase_price'] * inv_df_capital['stock']).sum()
@@ -577,7 +576,6 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             df_to_show = sales_df[['sale_date', 'name', 'staff_name', 'discount', 'درآمد نهایی فاکتور', 'net_profit', 'staff_commission']]
             st.dataframe(df_to_show, hide_index=True, use_container_width=True)
             
-            # ویژگی جدید: خروجی اکسل فروش
             excel_sales = convert_df_to_excel(df_to_show)
             st.download_button(label="📥 دانلود گزارش فروش (Excel)", data=excel_sales, file_name=f"Sales_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else: st.info("فروشی ثبت نشده.")
@@ -692,7 +690,6 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
         if not df.empty:
             st.dataframe(df, hide_index=True, use_container_width=True)
             
-            # ویژگی جدید: خروجی اکسل دفتر حساب
             ex_ledger = convert_df_to_excel(df)
             st.download_button(label=f"📥 دانلود لیست {title} (Excel)", data=ex_ledger, file_name=f"Ledger_{l_type}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dl_{l_type}")
             
