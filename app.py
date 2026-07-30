@@ -20,15 +20,13 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="سیستم یکپارچه فروشگاه اسپرت", page_icon="🚗", layout="wide")
 
-# 🌟 اصلاح باگ منوی موبایل: هدر مخفی نمی‌شود تا دکمه همبرگری در موبایل کار کند
+# شخصی‌سازی ظاهر و حفظ منوی موبایل
 st.markdown("""
 <style>
-    /* مخفی کردن منوی سه‌نقطه و فوتر استریم‌لیت برای شخصی‌سازی ظاهر */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
     
-    /* تنظیمات راست‌چین و فونت */
     .stMarkdown, p, h1, h2, h3, h4, label { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important; }
     .stButton>button { width: 100%; border-radius: 8px; }
     .invoice-box { border: 2px dashed #4CAF50; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #333; margin-top: 15px; direction: rtl; text-align: right; }
@@ -40,7 +38,6 @@ def get_iran_time():
     iran_tz = pytz.timezone('Asia/Tehran')
     return datetime.now(iran_tz)
 
-# تابع تبدیل دیتافریم به فایل اکسل
 def convert_df_to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -48,7 +45,7 @@ def convert_df_to_excel(df):
     return output.getvalue()
 
 # ==========================================
-# توابع دیتابیس (حفظ اصالت و امنیت کامل)
+# توابع دیتابیس
 # ==========================================
 DB_NAME = "inventory.db"
 
@@ -84,12 +81,13 @@ def init_db():
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, record_type TEXT, person_name TEXT, amount REAL, due_date TEXT, description TEXT, status TEXT, timestamp DATETIME)''')
     c.execute('''CREATE TABLE IF NOT EXISTS expenses
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, amount REAL, exp_date TEXT, timestamp DATETIME)''')
+                 
     c.execute('''CREATE TABLE IF NOT EXISTS staff
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, commission_rate REAL, timestamp DATETIME)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS blind_inventory
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, product_code TEXT, product_name TEXT,
-                  counted_stock INTEGER, expected_stock INTEGER, 
-                  staff_name TEXT, timestamp TEXT, status TEXT)''')
+    c.execute("PRAGMA table_info(staff)")
+    staff_cols_db = [col[1] for col in c.fetchall()]
+    if 'password' not in staff_cols_db:
+        c.execute("ALTER TABLE staff ADD COLUMN password TEXT DEFAULT '1234'")
     
     conn.commit()
     conn.close()
@@ -119,7 +117,7 @@ if "scanned_add_code" not in st.session_state: st.session_state.scanned_add_code
 st.sidebar.title("🚗 سیستم فروشگاه اسپرت")
 st.sidebar.markdown("---")
 
-# 🔒 سیستم احراز هویت (Login)
+# 🔒 سیستم احراز هویت
 if st.session_state.user_role is None:
     st.sidebar.subheader("🔐 ورود به سیستم")
     login_type = st.sidebar.radio("ورود به عنوان:", ["شاگرد / پرسنل فروش", "صاحب مغازه (ادمین)"])
@@ -140,10 +138,21 @@ if st.session_state.user_role is None:
         
         if not staff_df.empty:
             staff_name_input = st.sidebar.selectbox("نام خود را انتخاب کنید:", staff_df['name'].tolist())
+            staff_pass_input = st.sidebar.text_input("رمز عبور خود را وارد کنید:", type="password")
+            
             if st.sidebar.button("ورود به پنل فروش"):
-                st.session_state.user_role = "Staff"
-                st.session_state.user_name = staff_name_input
-                st.rerun()
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                c.execute("SELECT password FROM staff WHERE name=?", (staff_name_input,))
+                res = c.fetchone()
+                conn.close()
+                
+                if res and staff_pass_input == res[0]:
+                    st.session_state.user_role = "Staff"
+                    st.session_state.user_name = staff_name_input
+                    st.rerun()
+                else:
+                    st.sidebar.error("❌ رمز عبور اشتباه است!")
         else:
             st.sidebar.warning("هنوز هیچ شاگردی ثبت نشده است! ابتدا صاحب مغازه باید شاگردها را تعریف کند.")
 
@@ -161,9 +170,9 @@ if st.sidebar.button("خروج از سیستم"):
 # تنظیم منوها
 st.sidebar.markdown("---")
 if st.session_state.user_role == "Admin":
-    menu = ["🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد", "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل (شاگردان)", "🕵️‍♂️ گزارش انبارگردانی"]
+    menu = ["🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد", "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل (شاگردان)"]
 else:
-    menu = ["🛒 ثبت فروش / خدمات", "📦 جستجو در انبار", "🔍 انبارگردانی فیزیکی"]
+    menu = ["🛒 ثبت فروش / خدمات", "📦 جستجو در انبار"]
 
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
@@ -252,8 +261,12 @@ if choice == "🛒 ثبت فروش / خدمات":
                     
                     with st.form("sale_form"):
                         f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1)
+                        
                         f_install = st.number_input("اجرت نصب (تومان)", min_value=0, step=10000, value=0)
+                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>🔧 معادل: {f_install:,.0f} تومان</div>", unsafe_allow_html=True)
+                        
                         f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, step=10000, value=0)
+                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#d32f2f; font-weight:bold; font-size: 14px;'>🎁 معادل: {f_discount:,.0f} تومان</div>", unsafe_allow_html=True)
                         
                         if st.session_state.user_role == "Admin":
                             s_staff = st.selectbox("👷‍♂️ ثبت به نام (جهت پورسانت):", staff_options)
@@ -302,7 +315,9 @@ if choice == "🛒 ثبت فروش / خدمات":
         st.info("ثبت خدمات و تعمیرات بدون کسر کالا از انبار")
         with st.form("service_form"):
             s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
+            
             s_fee = st.number_input("مبلغ اجرت (تومان)", min_value=0, step=50000)
+            st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {s_fee:,.0f} تومان</div>", unsafe_allow_html=True)
             
             if st.session_state.user_role == "Admin":
                 s_staff_srv = st.selectbox("👷‍♂️ ثبت به نام نصاب:", staff_options)
@@ -427,8 +442,13 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
                 en = st.text_input("نام", p[1])
                 ecar = st.text_input("ماشین", p[6])
                 ecat = st.text_input("دسته", p[2])
-                eb = st.number_input("خرید", value=int(p[3]))
-                es = st.number_input("فروش", value=int(p[4]))
+                
+                eb = st.number_input("خرید (تومان)", value=int(p[3]), step=10000)
+                st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#0088cc; font-weight:bold; font-size: 14px;'>💳 معادل: {eb:,.0f} تومان</div>", unsafe_allow_html=True)
+                
+                es = st.number_input("فروش (تومان)", value=int(p[4]), step=10000)
+                st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#0088cc; font-weight:bold; font-size: 14px;'>💳 معادل: {es:,.0f} تومان</div>", unsafe_allow_html=True)
+                
                 est = st.number_input("موجودی", value=int(p[5]))
                 if st.button("💾 ذخیره تغییرات"):
                     conn = sqlite3.connect(DB_NAME)
@@ -438,59 +458,6 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
                     conn.close()
                     st.success("آپدیت شد!")
                     st.rerun()
-
-# ==========================================
-# بخش 3: انبارگردانی کور
-# ==========================================
-elif choice == "🔍 انبارگردانی فیزیکی":
-    st.header("🔍 انبارگردانی کور (شمارش فیزیکی)")
-    st.info("کالا را پیدا/اسکن کنید و فقط تعداد فیزیکی موجود در قفسه را وارد کنید.")
-    
-    b_scan_method = st.radio("روش انتخاب کالا:", ("اسکن با دوربین", "ورود دستی کد/بارکد", "جستجوی نام کالا"))
-    b_code = ""
-    
-    if b_scan_method == "اسکن با دوربین":
-        if HAS_SCANNER_PKG:
-            scanned_b = qrcode_scanner(key='blind_scan')
-            if scanned_b: b_code = scanned_b
-        else:
-            st.error("اسکنر نصب نیست.")
-    elif b_scan_method == "ورود دستی کد/بارکد":
-        b_code = st.text_input("کد یا بارکد کالا را وارد کنید:")
-    elif b_scan_method == "جستجوی نام کالا":
-        search_b_query = st.text_input("نام بخشی از کالا یا ماشین را جستجو کنید:")
-        if search_b_query:
-            conn = sqlite3.connect(DB_NAME)
-            b_match_df = pd.read_sql_query(f"SELECT code, name, compatible_cars FROM products WHERE name LIKE '%{search_b_query}%' OR compatible_cars LIKE '%{search_b_query}%'", conn)
-            conn.close()
-            if not b_match_df.empty:
-                opts = (b_match_df['name'] + " (مناسب: " + b_match_df['compatible_cars'] + ") - کد: " + b_match_df['code']).tolist()
-                b_selected = st.selectbox("کالای مورد نظر را انتخاب کنید:", opts)
-                b_code = b_selected.split("کد: ")[1].strip()
-                
-    if b_code:
-        conn = sqlite3.connect(DB_NAME)
-        c = conn.cursor()
-        c.execute("SELECT code, name, stock FROM products WHERE code=?", (b_code,))
-        p = c.fetchone()
-        conn.close()
-        
-        if p:
-            st.subheader(f"📦 کالا: {p[1]}")
-            with st.form("blind_form"):
-                counted = st.number_input("تعدادی که به صورت فیزیکی در قفسه می‌بینید را وارد کنید:", min_value=0, step=1)
-                if st.form_submit_button("✅ ثبت شمارش برای بررسی ادمین"):
-                    now_dt = get_iran_time()
-                    now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("INSERT INTO blind_inventory (product_code, product_name, counted_stock, expected_stock, staff_name, timestamp, status) VALUES (?,?,?,?,?,?,?)",
-                              (p[0], p[1], counted, p[2], st.session_state.user_name, now_str, "بررسی نشده"))
-                    conn.commit()
-                    conn.close()
-                    st.success("شمارش شما ثبت شد و برای تایید به پنل مدیریت ارسال گردید.")
-        else:
-            st.warning("⚠️ کالایی با این مشخصات یافت نشد.")
 
 # ==========================================
 # افزودن کالا (مختص ادمین)
@@ -509,9 +476,15 @@ elif choice == "➕ افزودن کالا":
     pn = st.text_input("نام کالا *")
     pc = st.text_input("مناسب خودرو (مثال 206):", "عمومی")
     pcat = st.selectbox("دسته‌بندی", ["هدلایت", "روکش", "سیستم صوتی", "تزئینات", "سایر"])
+    
     c1, c2 = st.columns(2)
-    with c1: pb = st.number_input("قیمت خرید", step=10000)
-    with c2: ps = st.number_input("قیمت فروش", step=10000)
+    with c1: 
+        pb = st.number_input("قیمت خرید (تومان)", step=10000, min_value=0)
+        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {pb:,.0f} تومان</div>", unsafe_allow_html=True)
+    with c2: 
+        ps = st.number_input("قیمت فروش (تومان)", step=10000, min_value=0)
+        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ps:,.0f} تومان</div>", unsafe_allow_html=True)
+        
     pst = st.number_input("موجودی", min_value=0)
     
     if st.button("➕ ثبت کالا", type="primary"):
@@ -591,7 +564,10 @@ elif choice == "📊 گزارش‌ها و داشبورد":
         with st.form("add_exp"):
             st.subheader("➕ ثبت هزینه جدید (اجاره، برق، و...)")
             ex_t = st.text_input("شرح هزینه")
+            
             ex_a = st.number_input("مبلغ (تومان)", step=50000)
+            st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ex_a:,.0f} تومان</div>", unsafe_allow_html=True)
+            
             if st.form_submit_button("ثبت خرِج‌کرد"):
                 if ex_t and ex_a > 0:
                     n_str = jdatetime.datetime.fromgregorian(datetime=get_iran_time()).strftime('%Y/%m/%d')
@@ -629,40 +605,9 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             else:
                 st.success("تا کنون هیچ تخفیفی روی فاکتورها ثبت نشده است.")
 
-elif choice == "🕵️‍♂️ گزارش انبارگردانی":
-    st.header("🕵️‍♂️ بررسی گزارشات انبارگردانی شاگردان")
-    conn = sqlite3.connect(DB_NAME)
-    df_b = pd.read_sql_query("SELECT * FROM blind_inventory WHERE status='بررسی نشده'", conn)
-    
-    if not df_b.empty:
-        df_b['اختلاف با سیستم'] = df_b['counted_stock'] - df_b['expected_stock']
-        st.dataframe(df_b[['id', 'product_name', 'staff_name', 'expected_stock', 'counted_stock', 'اختلاف با سیستم', 'timestamp']], hide_index=True, use_container_width=True)
-        
-        with st.form("inventory_approval"):
-            c1, c2 = st.columns(2)
-            with c1: b_id = st.number_input("کد ردیف (id) برای اعمال تصمیم:", min_value=0)
-            with c2: action = st.radio("تصمیم ادمین:", ("✅ تایید و اصلاح موجودی انبار", "❌ رد کردن (اشتباه شاگرد در شمارش)"))
-            
-            if st.form_submit_button("ثبت نهایی تصمیم"):
-                c = conn.cursor()
-                if action.startswith("✅"):
-                    c.execute("SELECT product_code, counted_stock FROM blind_inventory WHERE id=?", (b_id,))
-                    res = c.fetchone()
-                    if res:
-                        c.execute("UPDATE products SET stock=? WHERE code=?", (res[1], res[0]))
-                        c.execute("UPDATE blind_inventory SET status='تایید شده' WHERE id=?", (b_id,))
-                        conn.commit()
-                        st.success("موجودی انبار با موفقیت اصلاح شد.")
-                else:
-                    c.execute("UPDATE blind_inventory SET status='رد شده' WHERE id=?", (b_id,))
-                    conn.commit()
-                    st.warning("شمارش شاگرد رد شد و موجودی تغییری نکرد.")
-                conn.close()
-                st.rerun()
-    else:
-        st.success("✅ هیچ انبارگردانی بررسی نشده‌ای در صف انتظار وجود ندارد.")
-    conn.close()
-
+# ==========================================
+# دفتر حساب
+# ==========================================
 elif choice == "📒 دفتر حساب (چک‌ها)":
     st.header("📒 دفتر طلب و بدهی")
     t1, t2 = st.tabs(["💵 طلب از مشتریان", "💳 بدهی و چک‌های ما"])
@@ -671,7 +616,10 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
             c1, c2 = st.columns(2)
             with c1: 
                 name = st.text_input(p_label)
+                
                 amt = st.number_input("مبلغ (تومان)", step=100000)
+                st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {amt:,.0f} تومان</div>", unsafe_allow_html=True)
+                
             with c2:
                 date = st.text_input("سررسید (مثال: 1403/06/10)")
                 desc = st.text_input("بابت")
@@ -704,36 +652,41 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
     with t1: render_ledger("customer_debt", "طلب", "مشتری بدهکار")
     with t2: render_ledger("owner_debt", "بدهی", "شخص طلبکار")
 
+# ==========================================
+# مدیریت پرسنل 
+# ==========================================
 elif choice == "👥 مدیریت پرسنل (شاگردان)":
     st.header("👥 مدیریت شاگردان و تعیین حقوق/پورسانت")
     
     with st.form("add_staff_form"):
         st.subheader("➕ افزودن شاگرد جدید")
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
-            new_staff_name = st.text_input("نام شاگرد (مثال: علی رضایی)")
+            new_staff_name = st.text_input("نام شاگرد (مثال: علی)")
         with c2:
-            new_staff_rate = st.number_input("درصد پورسانت از هر سود/اجرت (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+            new_staff_pass = st.text_input("رمز عبور اختصاصی شاگرد", value="1234")
+        with c3:
+            new_staff_rate = st.number_input("پورسانت از سود/اجرت (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
             
         if st.form_submit_button("ثبت مشخصات شاگرد"):
-            if new_staff_name:
+            if new_staff_name and new_staff_pass:
                 try:
                     conn = sqlite3.connect(DB_NAME)
                     c = conn.cursor()
-                    c.execute("INSERT INTO staff (name, commission_rate, timestamp) VALUES (?,?,?)", (new_staff_name, new_staff_rate, get_iran_time()))
+                    c.execute("INSERT INTO staff (name, password, commission_rate, timestamp) VALUES (?,?,?,?)", (new_staff_name, new_staff_pass, new_staff_rate, get_iran_time()))
                     conn.commit()
                     conn.close()
-                    st.success(f"شاگرد جدید ({new_staff_name}) اضافه شد!")
+                    st.success(f"شاگرد جدید ({new_staff_name}) با رمز عبور ثبت شد!")
                     st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("این نام قبلاً در سیستم ثبت شده است.")
             else:
-                st.error("لطفاً نام شاگرد را وارد کنید.")
+                st.error("لطفاً نام و رمز عبور را وارد کنید.")
                 
     st.markdown("---")
     st.subheader("📋 لیست شاگردان مغازه")
     conn = sqlite3.connect(DB_NAME)
-    staff_df_disp = pd.read_sql_query("SELECT id as 'کد سیستم', name as 'نام شاگرد', commission_rate as 'درصد پورسانت (%)' FROM staff", conn)
+    staff_df_disp = pd.read_sql_query("SELECT id as 'کد سیستم', name as 'نام شاگرد', password as 'رمز عبور', commission_rate as 'درصد پورسانت (%)' FROM staff", conn)
     conn.close()
     
     if not staff_df_disp.empty:
