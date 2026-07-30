@@ -4,3 +4,4 @@ streamlit-qrcode-scanner
 jdatetime
 Pillow
 pytz
+openpyxl
