@@ -259,100 +259,104 @@ if choice == "🛒 ثبت فروش / خدمات":
                     st.subheader(f"📦 {product[1]}")
                     st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان | **موجودی:** {product[5]} عدد")
                     
-                    with st.form("sale_form"):
-                        f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1)
-                        
-                        f_install = st.number_input("اجرت نصب (تومان)", min_value=0, step=10000, value=0)
-                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>🔧 معادل: {f_install:,.0f} تومان</div>", unsafe_allow_html=True)
-                        
-                        f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, step=10000, value=0)
-                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#d32f2f; font-weight:bold; font-size: 14px;'>🎁 معادل: {f_discount:,.0f} تومان</div>", unsafe_allow_html=True)
-                        
-                        if st.session_state.user_role == "Admin":
-                            s_staff = st.selectbox("👷‍♂️ ثبت به نام (جهت پورسانت):", staff_options)
-                        else:
-                            s_staff = st.session_state.user_name
-                            st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
-                        
-                        cc1, cc2 = st.columns(2)
-                        with cc1: c_name = st.text_input("نام مشتری (اختیاری)")
-                        with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)")
-                        c_car = st.text_input("مدل ماشین")
+                    # فرم برداشته شد تا آپدیت‌ها در لحظه کار کنند
+                    st.markdown("---")
+                    st.markdown("📝 **اطلاعات ثبت فاکتور**")
+                    f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1)
+                    
+                    f_install = st.number_input("اجرت نصب (تومان)", min_value=0, step=10000, value=0)
+                    if f_install >= 0:
+                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {f_install:,.0f} تومان</div>", unsafe_allow_html=True)
+                    
+                    f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, step=10000, value=0)
+                    if f_discount >= 0:
+                        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#d32f2f; font-weight:bold; font-size: 14px;'>🎁 معادل تخفیف: {f_discount:,.0f} تومان</div>", unsafe_allow_html=True)
+                    
+                    if st.session_state.user_role == "Admin":
+                        s_staff = st.selectbox("👷‍♂️ ثبت به نام (جهت پورسانت):", staff_options)
+                    else:
+                        s_staff = st.session_state.user_name
+                        st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
+                    
+                    cc1, cc2 = st.columns(2)
+                    with cc1: c_name = st.text_input("نام مشتری (اختیاری)")
+                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)")
+                    c_car = st.text_input("مدل ماشین")
 
-                        if st.form_submit_button("✅ ثبت نهایی فاکتور"):
-                            if product[5] >= f_qty:
-                                new_stock = product[5] - f_qty
-                                now_dt = get_iran_time()
-                                now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
-                                
-                                net_prof = ((product[4] - product[3]) * f_qty) + f_install - f_discount
-                                total_bill = (product[4] * f_qty) + f_install - f_discount
-                                
-                                staff_rate = 0
-                                conn = sqlite3.connect(DB_NAME)
-                                c = conn.cursor()
-                                if s_staff != "ادمین (بدون پورسانت)":
-                                    c.execute("SELECT commission_rate FROM staff WHERE name=?", (s_staff,))
-                                    res = c.fetchone()
-                                    if res: staff_rate = res[0]
-                                staff_comm = net_prof * (staff_rate / 100.0) if net_prof > 0 else 0
-                                
-                                c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
-                                c.execute('''INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                                          (code_input, product[1], f_qty, product[4], now_str, now_dt, c_name, c_phone, c_car, f_install, net_prof, s_staff, staff_comm, f_discount))
-                                conn.commit()
-                                conn.close()
-                                
-                                st.session_state.last_invoice = {"date":now_str, "c_name":c_name or "نقدی", "c_phone":c_phone, "c_car":c_car, "p_name":product[1], "qty":f_qty, "price":product[4], "install":f_install, "discount":f_discount, "total":total_bill, "staff":s_staff}
-                                st.success("فروش ثبت شد!")
-                                st.rerun()
-                            else:
-                                st.error("موجودی کافی نیست!")
+                    if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
+                        if product[5] >= f_qty:
+                            new_stock = product[5] - f_qty
+                            now_dt = get_iran_time()
+                            now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
+                            
+                            net_prof = ((product[4] - product[3]) * f_qty) + f_install - f_discount
+                            total_bill = (product[4] * f_qty) + f_install - f_discount
+                            
+                            staff_rate = 0
+                            conn = sqlite3.connect(DB_NAME)
+                            c = conn.cursor()
+                            if s_staff != "ادمین (بدون پورسانت)":
+                                c.execute("SELECT commission_rate FROM staff WHERE name=?", (s_staff,))
+                                res = c.fetchone()
+                                if res: staff_rate = res[0]
+                            staff_comm = net_prof * (staff_rate / 100.0) if net_prof > 0 else 0
+                            
+                            c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
+                            c.execute('''INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                                      (code_input, product[1], f_qty, product[4], now_str, now_dt, c_name, c_phone, c_car, f_install, net_prof, s_staff, staff_comm, f_discount))
+                            conn.commit()
+                            conn.close()
+                            
+                            st.session_state.last_invoice = {"date":now_str, "c_name":c_name or "نقدی", "c_phone":c_phone, "c_car":c_car, "p_name":product[1], "qty":f_qty, "price":product[4], "install":f_install, "discount":f_discount, "total":total_bill, "staff":s_staff}
+                            st.success("فروش ثبت شد!")
+                            st.rerun()
+                        else:
+                            st.error("موجودی کافی نیست!")
                 else:
                     st.warning("کالایی یافت نشد.")
 
     with tab_service:
-        st.info("ثبت خدمات و تعمیرات بدون کسر کالا از انبار")
-        with st.form("service_form"):
-            s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
-            
-            s_fee = st.number_input("مبلغ اجرت (تومان)", min_value=0, step=50000)
+        st.info("در این بخش می‌توانید اجرت نصب و تعمیرات را بدون فروش کالا ثبت کنید.")
+        s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
+        
+        s_fee = st.number_input("مبلغ اجرت (تومان)", min_value=0, step=50000)
+        if s_fee >= 0:
             st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {s_fee:,.0f} تومان</div>", unsafe_allow_html=True)
-            
-            if st.session_state.user_role == "Admin":
-                s_staff_srv = st.selectbox("👷‍♂️ ثبت به نام نصاب:", staff_options)
+        
+        if st.session_state.user_role == "Admin":
+            s_staff_srv = st.selectbox("👷‍♂️ ثبت به نام نصاب:", staff_options, key="staff_srv")
+        else:
+            s_staff_srv = st.session_state.user_name
+            st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
+        
+        sc1, sc2 = st.columns(2)
+        with sc1: s_cname = st.text_input("نام مشتری", key="cname_srv")
+        with sc2: s_cphone = st.text_input("شماره موبایل", key="cphone_srv")
+        s_ccar = st.text_input("مدل خودرو", key="ccar_srv")
+        
+        if st.button("🔧 ثبت خدمات", use_container_width=True):
+            if s_name and s_fee > 0:
+                now_dt = get_iran_time()
+                now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
+                
+                staff_rate = 0
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                if s_staff_srv != "ادمین (بدون پورسانت)":
+                    c.execute("SELECT commission_rate FROM staff WHERE name=?", (s_staff_srv,))
+                    res = c.fetchone()
+                    if res: staff_rate = res[0]
+                staff_comm = s_fee * (staff_rate / 100.0)
+                
+                c.execute('''INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                          ('SERVICE', s_name, 0, 0, now_str, now_dt, s_cname, s_cphone, s_ccar, s_fee, s_fee, s_staff_srv, staff_comm, 0))
+                conn.commit()
+                conn.close()
+                st.session_state.last_invoice = {"date":now_str, "c_name":s_cname or "نقدی", "c_phone":s_cphone, "c_car":s_ccar, "p_name":s_name, "qty":0, "price":0, "install":s_fee, "discount":0, "total":s_fee, "staff":s_staff_srv}
+                st.success("خدمات ثبت شد!")
+                st.rerun()
             else:
-                s_staff_srv = st.session_state.user_name
-                st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff_srv}) ثبت می‌شود.")
-            
-            sc1, sc2 = st.columns(2)
-            with sc1: s_cname = st.text_input("نام مشتری")
-            with sc2: s_cphone = st.text_input("شماره موبایل")
-            s_ccar = st.text_input("مدل خودرو")
-            
-            if st.form_submit_button("🔧 ثبت خدمات"):
-                if s_name and s_fee > 0:
-                    now_dt = get_iran_time()
-                    now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
-                    
-                    staff_rate = 0
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    if s_staff_srv != "ادمین (بدون پورسانت)":
-                        c.execute("SELECT commission_rate FROM staff WHERE name=?", (s_staff_srv,))
-                        res = c.fetchone()
-                        if res: staff_rate = res[0]
-                    staff_comm = s_fee * (staff_rate / 100.0)
-                    
-                    c.execute('''INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                              ('SERVICE', s_name, 0, 0, now_str, now_dt, s_cname, s_cphone, s_ccar, s_fee, s_fee, s_staff_srv, staff_comm, 0))
-                    conn.commit()
-                    conn.close()
-                    st.session_state.last_invoice = {"date":now_str, "c_name":s_cname or "نقدی", "c_phone":s_cphone, "c_car":s_ccar, "p_name":s_name, "qty":0, "price":0, "install":s_fee, "discount":0, "total":s_fee, "staff":s_staff_srv}
-                    st.success("خدمات ثبت شد!")
-                    st.rerun()
-                else:
-                    st.error("شرح و مبلغ الزامی است.")
+                st.error("شرح و مبلغ الزامی است.")
 
     if st.session_state.last_invoice:
         inv = st.session_state.last_invoice
@@ -368,7 +372,7 @@ if choice == "🛒 ثبت فروش / خدمات":
         with b1: st.markdown(f"<a href='{w_link}' target='_blank'><button style='width:100%; padding:10px; background-color:#25D366; color:white; border:none;'>🟢 ارسال واتس‌اپ</button></a>", unsafe_allow_html=True)
         with b2: st.markdown(f"<a href='{t_link}' target='_blank'><button style='width:100%; padding:10px; background-color:#0088cc; color:white; border:none;'>🔵 ارسال تلگرام</button></a>", unsafe_allow_html=True)
         with b3:
-            if st.button("بستن فاکتور"):
+            if st.button("بستن فاکتور", use_container_width=True):
                 st.session_state.last_invoice = None
                 st.rerun()
 
@@ -450,7 +454,7 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
                 st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#0088cc; font-weight:bold; font-size: 14px;'>💳 معادل: {es:,.0f} تومان</div>", unsafe_allow_html=True)
                 
                 est = st.number_input("موجودی", value=int(p[5]))
-                if st.button("💾 ذخیره تغییرات"):
+                if st.button("💾 ذخیره تغییرات", use_container_width=True):
                     conn = sqlite3.connect(DB_NAME)
                     c = conn.cursor()
                     c.execute("UPDATE products SET name=?, compatible_cars=?, category=?, purchase_price=?, sale_price=?, stock=? WHERE code=?", (en, ecar, ecat, eb, es, est, e_code))
@@ -487,7 +491,7 @@ elif choice == "➕ افزودن کالا":
         
     pst = st.number_input("موجودی", min_value=0)
     
-    if st.button("➕ ثبت کالا", type="primary"):
+    if st.button("➕ ثبت کالا", type="primary", use_container_width=True):
         if not pn: st.error("نام الزامی است.")
         else:
             fc = p_code.strip() if p_code.strip() else "AUTO-"+get_iran_time().strftime("%Y%m%d%H%M%S")
@@ -561,23 +565,23 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             st.line_chart(chart_data.groupby('date')['درآمد نهایی فاکتور'].sum())
             
     with t_exp:
-        with st.form("add_exp"):
-            st.subheader("➕ ثبت هزینه جدید (اجاره، برق، و...)")
-            ex_t = st.text_input("شرح هزینه")
-            
-            ex_a = st.number_input("مبلغ (تومان)", step=50000)
+        st.subheader("➕ ثبت هزینه جدید (اجاره، برق، و...)")
+        ex_t = st.text_input("شرح هزینه")
+        
+        ex_a = st.number_input("مبلغ (تومان)", step=50000)
+        if ex_a >= 0:
             st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ex_a:,.0f} تومان</div>", unsafe_allow_html=True)
-            
-            if st.form_submit_button("ثبت خرِج‌کرد"):
-                if ex_t and ex_a > 0:
-                    n_str = jdatetime.datetime.fromgregorian(datetime=get_iran_time()).strftime('%Y/%m/%d')
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("INSERT INTO expenses (title, amount, exp_date, timestamp) VALUES (?,?,?,?)", (ex_t, ex_a, n_str, get_iran_time()))
-                    conn.commit()
-                    conn.close()
-                    st.success("هزینه ثبت شد.")
-                    st.rerun()
+        
+        if st.button("ثبت خرج‌کرد", use_container_width=True):
+            if ex_t and ex_a > 0:
+                n_str = jdatetime.datetime.fromgregorian(datetime=get_iran_time()).strftime('%Y/%m/%d')
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                c.execute("INSERT INTO expenses (title, amount, exp_date, timestamp) VALUES (?,?,?,?)", (ex_t, ex_a, n_str, get_iran_time()))
+                conn.commit()
+                conn.close()
+                st.success("هزینه ثبت شد.")
+                st.rerun()
         if not exp_df.empty:
             st.dataframe(exp_df[['exp_date', 'title', 'amount']], hide_index=True, use_container_width=True)
             
@@ -611,44 +615,50 @@ elif choice == "📊 گزارش‌ها و داشبورد":
 elif choice == "📒 دفتر حساب (چک‌ها)":
     st.header("📒 دفتر طلب و بدهی")
     t1, t2 = st.tabs(["💵 طلب از مشتریان", "💳 بدهی و چک‌های ما"])
+    
     def render_ledger(l_type, title, p_label):
-        with st.form(f"f_{l_type}"):
-            c1, c2 = st.columns(2)
-            with c1: 
-                name = st.text_input(p_label)
-                
-                amt = st.number_input("مبلغ (تومان)", step=100000)
+        st.markdown(f"### ➕ ثبت {title} جدید")
+        c1, c2 = st.columns(2)
+        with c1: 
+            name = st.text_input(p_label, key=f"name_{l_type}")
+            amt = st.number_input("مبلغ (تومان)", step=100000, key=f"amt_{l_type}")
+            if amt >= 0:
                 st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {amt:,.0f} تومان</div>", unsafe_allow_html=True)
+            
+        with c2:
+            date = st.text_input("سررسید (مثال: 1403/06/10)", key=f"date_{l_type}")
+            desc = st.text_input("بابت", key=f"desc_{l_type}")
+            
+        if st.button(f"✅ ثبت در دفتر {title}", use_container_width=True, key=f"btn_add_{l_type}"):
+            if name and amt > 0:
+                now_str = jdatetime.datetime.fromgregorian(datetime=get_iran_time()).strftime('%Y/%m/%d')
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                c.execute("INSERT INTO ledger (record_type, person_name, amount, due_date, description, status, timestamp) VALUES (?,?,?,?,?,?,?)", (l_type, name, amt, date, desc, "معلق", now_str))
+                conn.commit()
+                conn.close()
+                st.rerun()
                 
-            with c2:
-                date = st.text_input("سررسید (مثال: 1403/06/10)")
-                desc = st.text_input("بابت")
-            if st.form_submit_button("ثبت"):
-                if name and amt > 0:
-                    now_str = jdatetime.datetime.fromgregorian(datetime=get_iran_time()).strftime('%Y/%m/%d')
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("INSERT INTO ledger (record_type, person_name, amount, due_date, description, status, timestamp) VALUES (?,?,?,?,?,?,?)", (l_type, name, amt, date, desc, "معلق", now_str))
-                    conn.commit()
-                    conn.close()
-                    st.rerun()
         conn = sqlite3.connect(DB_NAME)
         df = pd.read_sql_query(f"SELECT id as 'کد', person_name as '{p_label}', amount as 'مبلغ', due_date as 'سررسید', description as 'بابت' FROM ledger WHERE record_type='{l_type}'", conn)
         conn.close()
+        
         if not df.empty:
+            st.markdown("---")
             st.dataframe(df, hide_index=True, use_container_width=True)
             
             ex_ledger = convert_df_to_excel(df)
             st.download_button(label=f"📥 دانلود لیست {title} (Excel)", data=ex_ledger, file_name=f"Ledger_{l_type}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dl_{l_type}")
             
             did = st.number_input(f"برای حذف {title} کد را وارد کنید:", min_value=0, key=f"d_{l_type}")
-            if st.button("✅ تسویه", key=f"b_{l_type}"):
+            if st.button("✅ تسویه و حذف از لیست", key=f"b_{l_type}"):
                 conn = sqlite3.connect(DB_NAME)
                 c = conn.cursor()
                 c.execute("DELETE FROM ledger WHERE id=?", (did,))
                 conn.commit()
                 conn.close()
                 st.rerun()
+                
     with t1: render_ledger("customer_debt", "طلب", "مشتری بدهکار")
     with t2: render_ledger("owner_debt", "بدهی", "شخص طلبکار")
 
@@ -658,31 +668,30 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
 elif choice == "👥 مدیریت پرسنل (شاگردان)":
     st.header("👥 مدیریت شاگردان و تعیین حقوق/پورسانت")
     
-    with st.form("add_staff_form"):
-        st.subheader("➕ افزودن شاگرد جدید")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            new_staff_name = st.text_input("نام شاگرد (مثال: علی)")
-        with c2:
-            new_staff_pass = st.text_input("رمز عبور اختصاصی شاگرد", value="1234")
-        with c3:
-            new_staff_rate = st.number_input("پورسانت از سود/اجرت (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+    st.subheader("➕ افزودن شاگرد جدید")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        new_staff_name = st.text_input("نام شاگرد (مثال: علی)")
+    with c2:
+        new_staff_pass = st.text_input("رمز عبور اختصاصی شاگرد", value="1234")
+    with c3:
+        new_staff_rate = st.number_input("پورسانت از سود/اجرت (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
+        
+    if st.button("ثبت مشخصات شاگرد", use_container_width=True):
+        if new_staff_name and new_staff_pass:
+            try:
+                conn = sqlite3.connect(DB_NAME)
+                c = conn.cursor()
+                c.execute("INSERT INTO staff (name, password, commission_rate, timestamp) VALUES (?,?,?,?)", (new_staff_name, new_staff_pass, new_staff_rate, get_iran_time()))
+                conn.commit()
+                conn.close()
+                st.success(f"شاگرد جدید ({new_staff_name}) با رمز عبور ثبت شد!")
+                st.rerun()
+            except sqlite3.IntegrityError:
+                st.error("این نام قبلاً در سیستم ثبت شده است.")
+        else:
+            st.error("لطفاً نام و رمز عبور را وارد کنید.")
             
-        if st.form_submit_button("ثبت مشخصات شاگرد"):
-            if new_staff_name and new_staff_pass:
-                try:
-                    conn = sqlite3.connect(DB_NAME)
-                    c = conn.cursor()
-                    c.execute("INSERT INTO staff (name, password, commission_rate, timestamp) VALUES (?,?,?,?)", (new_staff_name, new_staff_pass, new_staff_rate, get_iran_time()))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"شاگرد جدید ({new_staff_name}) با رمز عبور ثبت شد!")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("این نام قبلاً در سیستم ثبت شده است.")
-            else:
-                st.error("لطفاً نام و رمز عبور را وارد کنید.")
-                
     st.markdown("---")
     st.subheader("📋 لیست شاگردان مغازه")
     conn = sqlite3.connect(DB_NAME)
@@ -691,7 +700,7 @@ elif choice == "👥 مدیریت پرسنل (شاگردان)":
     
     if not staff_df_disp.empty:
         st.dataframe(staff_df_disp, hide_index=True, use_container_width=True)
-        del_staff_id = st.number_input("برای حذف یک شاگرد (اخراج)، کد سیستم او را وارد کنید:", min_value=0)
+        del_staff_id = st.number_input("برای اخراج و حذف شاگرد، کد سیستم او را وارد کنید:", min_value=0)
         if st.button("🗑️ حذف شاگرد"):
             conn = sqlite3.connect(DB_NAME)
             c = conn.cursor()
