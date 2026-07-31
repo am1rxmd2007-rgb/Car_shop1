@@ -260,13 +260,11 @@ if choice == "🛒 ثبت فروش / خدمات":
     
     conn = sqlite3.connect(DB_NAME)
     staff_df_list = pd.read_sql_query("SELECT name FROM staff", conn)
-    # دریافت لیست مشتریان (هم شماره هم نام)
     vip_df = pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != '' OR customer_phone != ''", conn)
     conn.close()
     
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist() if not staff_df_list.empty else ["ادمین (بدون پورسانت)"]
     
-    # ساخت لیست هوشمند اتوکامپلیت با ترکیب شماره و نام
     if not vip_df.empty:
         vip_df.fillna('', inplace=True)
         vip_df['display'] = vip_df.apply(lambda row: f"{row['customer_phone']} - {row['customer_name']}".strip(" -"), axis=1)
@@ -333,8 +331,16 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
-                    # منوی جستجوی زنده (Live Search) با کیبورد
-                    selected_vip = st.selectbox("🔍 کلیک کنید و نام یا شماره موبایل مشتری را تایپ کنید (جستجوی خودکار):", vip_options, key="vip_sale")
+                    # 🌟 راه حل قطعی برای موبایل: جستجو با تایپ مستقیم + لیست کشویی
+                    st.markdown("---")
+                    st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
+                    vip_search_q = st.text_input("⌨️ بخشی از شماره موبایل یا نام مشتری قدیمی را تایپ کنید:", key="vip_search_sale")
+                    
+                    # فیلتر کردن هوشمند لیست بر اساس متن تایپ شده
+                    filtered_vips = [v for v in vip_options if v == "👤 مشتری جدید (وارد کردن دستی)" or vip_search_q in v] if vip_search_q else vip_options
+                    
+                    selected_vip = st.selectbox("👇 مشتری را از لیست زیر انتخاب کنید:", filtered_vips, key="vip_sale")
+                    
                     if selected_vip != "👤 مشتری جدید (وارد کردن دستی)":
                         c_info = vip_df[vip_df['display'] == selected_vip].iloc[0]
                         c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
@@ -392,7 +398,15 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
-        selected_vip_srv = st.selectbox("🔍 کلیک کنید و نام یا شماره موبایل مشتری را تایپ کنید (جستجوی خودکار):", vip_options, key="vip_srv")
+        # 🌟 راه حل قطعی برای موبایل در بخش خدمات
+        st.markdown("---")
+        st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
+        vip_search_q_srv = st.text_input("⌨️ بخشی از شماره موبایل یا نام مشتری قدیمی را تایپ کنید:", key="vip_search_srv")
+        
+        filtered_vips_srv = [v for v in vip_options if v == "👤 مشتری جدید (وارد کردن دستی)" or vip_search_q_srv in v] if vip_search_q_srv else vip_options
+        
+        selected_vip_srv = st.selectbox("👇 مشتری را از لیست زیر انتخاب کنید:", filtered_vips_srv, key="vip_srv")
+        
         if selected_vip_srv != "👤 مشتری جدید (وارد کردن دستی)":
             c_info_srv = vip_df[vip_df['display'] == selected_vip_srv].iloc[0]
             cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
@@ -400,9 +414,9 @@ if choice == "🛒 ثبت فروش / خدمات":
             cs_name_val, cs_phone_val, cs_car_val = "", "", ""
 
         sc1, sc2 = st.columns(2)
-        with sc1: s_cname = st.text_input("نام مشتری", value=cs_name_val, key="cname_srv")
-        with sc2: s_cphone = st.text_input("شماره موبایل", value=cs_phone_val, key="cphone_srv")
-        s_ccar = st.text_input("مدل خودرو", value=cs_car_val, key="ccar_srv")
+        with sc1: s_cname = st.text_input("نام مشتری", value=cs_name_val, key="cname_srv_input")
+        with sc2: s_cphone = st.text_input("شماره موبایل", value=cs_phone_val, key="cphone_srv_input")
+        s_ccar = st.text_input("مدل خودرو", value=cs_car_val, key="ccar_srv_input")
         
         if st.button("🔧 ثبت خدمات", use_container_width=True):
             if s_name and s_fee > 0:
