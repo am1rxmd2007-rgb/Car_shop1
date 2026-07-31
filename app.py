@@ -638,58 +638,60 @@ if choice == "🛒 ثبت فروش / خدمات":
 
     with tab_refund:
         if st.session_state.user_role == "Admin":
-            st.markdown("🔍 **ابتدا کالای مرجوعی را پیدا کنید:**")
-            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method", horizontal=True)
-            ref_code = ""
-
-            if ref_method == "کیبورد / بارکدخوان فیزیکی":
-                ref_code = st.text_input("کد کالا را وارد/اسکن کنید:", key="ref_barcode")
-            elif ref_method == "دوربین (اسکنر خودکار)":
-                if HAS_SCANNER_PKG:
-                    scanned_ref = qrcode_scanner(key='ref_scanner')
-                    if scanned_ref: ref_code = scanned_ref
-                else:
-                    st.warning("پکیج اسکنر نصب نیست.")
-            elif ref_method == "جستجوی نام کالا":
-                ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:", key="ref_name")
-                if ref_q:
-                    ref_df = pd.read_sql_query(
-                        text("SELECT code, name FROM products WHERE name LIKE :q"),
-                        engine, params={"q": f"%{ref_q}%"}
-                    )
-                    if not ref_df.empty:
-                        label_map = {f"{r['name']} - کد: {r['code']}": r['code'] for _, r in ref_df.iterrows()}
-                        picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="ref_sel")
-                        if picked_label:
-                            ref_code = label_map[picked_label]
-                    else:
-                        st.info("کالایی یافت نشد.")
+            st.info("💡 برای ابطال، کد فاکتور را در کادر سمت راست وارد کنید. برای پیدا کردن کد فاکتور می‌توانید از ابزار جستجو در سمت چپ استفاده نمایید.")
             
-            if ref_code:
-                st.markdown("---")
-                st.markdown("**🧾 فاکتورهای صادر شده برای این کالا:**")
-                sales_of_product = pd.read_sql_query(
-                    text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 20"),
-                    engine, params={"c": ref_code}
-                )
-                if not sales_of_product.empty:
-                    st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
-                    
-                    refund_id = st.number_input("کد فاکتور جهت ابطال را وارد کنید:", min_value=0, step=1)
-                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار")
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.markdown("### 🗑️ ۱. ابطال فاکتور")
+                refund_id = st.number_input("کد فاکتور (جهت ابطال):", min_value=0, step=1, key="refund_id_input")
+                confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار", key="confirm_refund_chk")
 
-                    if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
+                if st.button("🗑️ ثبت ابطال و مرجوعی", disabled=not confirm_refund, type="primary"):
+                    if refund_id > 0:
                         with engine.begin() as conn:
-                            sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i AND product_code=:c"), {"i": refund_id, "c": ref_code}).mappings().fetchone()
+                            sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i"), {"i": refund_id}).mappings().fetchone()
                             if sale_rec:
-                                conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
+                                if sale_rec['product_code'] != 'SERVICE':
+                                    conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
                                 conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
-                                st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
-                                st.rerun()
+                                st.success(f"✅ فاکتور شماره {refund_id} باطل شد و موجودی به انبار بازگشت.")
                             else:
-                                st.error("کد فاکتور اشتباه است یا متعلق به این کالا نیست.")
+                                st.error("❌ فاکتوری با این کد یافت نشد.")
+                    else:
+                        st.warning("لطفاً یک کد معتبر وارد کنید.")
+
+            with c2:
+                st.markdown("### 🔍 ۲. جستجوی فاکتور")
+                ref_method = st.radio("روش جستجو:", ("مشاهده همه فاکتورهای اخیر", "جستجو بر اساس کالا"), horizontal=True)
+                ref_code = ""
+                show_all = False
+
+                if ref_method == "جستجو بر اساس کالا":
+                    ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:")
+                    if ref_q:
+                        ref_df = pd.read_sql_query(text("SELECT code, name FROM products WHERE name LIKE :q"), engine, params={"q": f"%{ref_q}%"})
+                        if not ref_df.empty:
+                            label_map = {f"{r['name']} - کد: {r['code']}": r['code'] for _, r in ref_df.iterrows()}
+                            picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()))
+                            if picked_label: ref_code = label_map[picked_label]
+                        else: st.info("کالایی یافت نشد.")
                 else:
-                    st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
+                    show_all = True
+            
+            st.markdown("---")
+            if show_all:
+                st.markdown("**🧾 ۵۰ فاکتور اخیر:**")
+                sales_of_product = pd.read_sql_query(text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales ORDER BY id DESC LIMIT 50"), engine)
+            elif ref_code:
+                st.markdown(f"**🧾 فاکتورهای صادر شده برای کد: {ref_code}**")
+                sales_of_product = pd.read_sql_query(text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 50"), engine, params={"c": ref_code})
+            else:
+                sales_of_product = pd.DataFrame()
+                
+            if not sales_of_product.empty:
+                st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
+            elif ref_code:
+                st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
         else:
             st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
@@ -703,7 +705,6 @@ if choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
-        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         
@@ -1051,7 +1052,6 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     end_ts = pd.Timestamp(end_dt)
 
     if not sales_df.empty:
-        # حذف هرگونه پسوند منطقه زمانی دیتابیس (Timezone) با جدا کردن دقیق بخش تاریخ و زمان
         sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'].astype(str).str.slice(0, 19), errors='coerce')
         sales_df = sales_df[(sales_df['timestamp'] >= start_ts) & (sales_df['timestamp'] <= end_ts)]
         
