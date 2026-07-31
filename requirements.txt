@@ -4,3 +4,8 @@ jdatetime
 pytz
 openpyxl
 streamlit-qrcode-scanner
+sqlalchemy
+psycopg2-binary
+reportlab
+arabic-reshaper
+python-bidi
