@@ -112,8 +112,11 @@ engine, db_type = get_engine()
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
-    id_type = "SERIAL" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
-    
+    # نکته: در SQLite، "INTEGER PRIMARY KEY AUTOINCREMENT" باید یکجا و به‌عنوان
+    # تنها تعریف کلید اصلی ستون باشد؛ اضافه‌کردن یک "PRIMARY KEY(id)" جداگانه
+    # باعث خطای "more than one primary key" و کرش کامل برنامه می‌شود.
+    id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+
     with engine.begin() as conn:
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS products (
@@ -128,27 +131,23 @@ def init_db():
                 customer_name TEXT DEFAULT '', customer_phone TEXT DEFAULT '', car_model TEXT DEFAULT '',
                 install_fee REAL DEFAULT 0, net_profit REAL DEFAULT 0,
                 staff_name TEXT DEFAULT 'ادمین (بدون پورسانت)', staff_commission REAL DEFAULT 0, discount REAL DEFAULT 0
-                {"" if is_pg else ", PRIMARY KEY(id)"}
             )
         """))
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS ledger (
                 id {id_type}, record_type TEXT, person_name TEXT, amount REAL, 
                 due_date TEXT, description TEXT, status TEXT, timestamp TIMESTAMP
-                {"" if is_pg else ", PRIMARY KEY(id)"}
             )
         """))
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS expenses (
                 id {id_type}, title TEXT, amount REAL, exp_date TEXT, timestamp TIMESTAMP
-                {"" if is_pg else ", PRIMARY KEY(id)"}
             )
         """))
         conn.execute(text(f"""
             CREATE TABLE IF NOT EXISTS staff (
                 id {id_type}, name TEXT UNIQUE, password TEXT DEFAULT '1234', 
                 commission_rate REAL, timestamp TIMESTAMP
-                {"" if is_pg else ", PRIMARY KEY(id)"}
             )
         """))
 
@@ -299,7 +298,11 @@ if choice == "🛒 ثبت فروش / خدمات":
             elif scan_method == "جستجوی نام کالا":
                 search_q = st.text_input("نام کالا یا ماشین:")
                 if search_q:
-                    m_df = pd.read_sql_query(f"SELECT code, name, compatible_cars FROM products WHERE name LIKE '%%{search_q}%%' OR compatible_cars LIKE '%%{search_q}%%'", engine)
+                    like_q = f"%{search_q}%"
+                    m_df = pd.read_sql_query(
+                        text("SELECT code, name, compatible_cars FROM products WHERE name LIKE :q OR compatible_cars LIKE :q"),
+                        engine, params={"q": like_q}
+                    )
                     if not m_df.empty:
                         opts = (m_df['name'] + " (مناسب: " + m_df['compatible_cars'] + ") - کد: " + m_df['code']).tolist()
                         code_input = st.selectbox("انتخاب کالا:", opts).split("کد: ")[1].strip()
