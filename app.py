@@ -259,7 +259,6 @@ if choice == "🛒 ثبت فروش / خدمات":
                     st.subheader(f"📦 {product[1]}")
                     st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان | **موجودی:** {product[5]} عدد")
                     
-                    # فرم برداشته شد تا آپدیت‌ها در لحظه کار کنند
                     st.markdown("---")
                     st.markdown("📝 **اطلاعات ثبت فاکتور**")
                     f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1)
@@ -464,46 +463,108 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
                     st.rerun()
 
 # ==========================================
-# افزودن کالا (مختص ادمین)
+# افزودن کالا (اضافه شدن تب آپلود گروهی اکسل)
 # ==========================================
 elif choice == "➕ افزودن کالا":
-    st.header("➕ کالای جدید")
-    a_mode = st.radio("روش ورود کد:", ("دستی / تولید خودکار", "اسکن دوربین"))
+    st.header("➕ افزودن کالای جدید به انبار")
     
-    if a_mode == "اسکن دوربین" and HAS_SCANNER_PKG:
-        scanned = qrcode_scanner(key='new_scan')
-        if scanned: st.session_state.scanned_add_code = scanned
-            
-    val = st.session_state.scanned_add_code if a_mode == "اسکن دوربین" else ""
-    p_code = st.text_input("کد/بارکد (خالی بگذارید تا خودکار ساخته شود):", value=val)
+    tab_manual, tab_bulk = st.tabs(["➕ ثبت تکی کالا", "📂 ورود گروهی با اکسل"])
     
-    pn = st.text_input("نام کالا *")
-    pc = st.text_input("مناسب خودرو (مثال 206):", "عمومی")
-    pcat = st.selectbox("دسته‌بندی", ["هدلایت", "روکش", "سیستم صوتی", "تزئینات", "سایر"])
-    
-    c1, c2 = st.columns(2)
-    with c1: 
-        pb = st.number_input("قیمت خرید (تومان)", step=10000, min_value=0)
-        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {pb:,.0f} تومان</div>", unsafe_allow_html=True)
-    with c2: 
-        ps = st.number_input("قیمت فروش (تومان)", step=10000, min_value=0)
-        st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ps:,.0f} تومان</div>", unsafe_allow_html=True)
+    with tab_manual:
+        a_mode = st.radio("روش ورود کد:", ("دستی / تولید خودکار", "اسکن دوربین"))
         
-    pst = st.number_input("موجودی", min_value=0)
-    
-    if st.button("➕ ثبت کالا", type="primary", use_container_width=True):
-        if not pn: st.error("نام الزامی است.")
-        else:
-            fc = p_code.strip() if p_code.strip() else "AUTO-"+get_iran_time().strftime("%Y%m%d%H%M%S")
-            try:
-                conn = sqlite3.connect(DB_NAME)
-                c = conn.cursor()
-                c.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?)", (fc, pn, pcat, pb, ps, pst, pc))
-                conn.commit()
-                conn.close()
-                st.session_state.scanned_add_code = ""
-                st.success("ثبت شد!")
-            except: st.error("کد تکراری است!")
+        if a_mode == "اسکن دوربین" and HAS_SCANNER_PKG:
+            scanned = qrcode_scanner(key='new_scan')
+            if scanned: st.session_state.scanned_add_code = scanned
+                
+        val = st.session_state.scanned_add_code if a_mode == "اسکن دوربین" else ""
+        p_code = st.text_input("کد/بارکد (خالی بگذارید تا خودکار ساخته شود):", value=val)
+        
+        pn = st.text_input("نام کالا *")
+        pc = st.text_input("مناسب خودرو (مثال 206):", "عمومی")
+        pcat = st.selectbox("دسته‌بندی", ["هدلایت", "روکش", "سیستم صوتی", "تزئینات", "سایر"])
+        
+        c1, c2 = st.columns(2)
+        with c1: 
+            pb = st.number_input("قیمت خرید (تومان)", step=10000, min_value=0)
+            st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {pb:,.0f} تومان</div>", unsafe_allow_html=True)
+        with c2: 
+            ps = st.number_input("قیمت فروش (تومان)", step=10000, min_value=0)
+            st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ps:,.0f} تومان</div>", unsafe_allow_html=True)
+            
+        pst = st.number_input("موجودی", min_value=0)
+        
+        if st.button("➕ ثبت کالا", type="primary", use_container_width=True):
+            if not pn: st.error("نام الزامی است.")
+            else:
+                fc = p_code.strip() if p_code.strip() else "AUTO-"+get_iran_time().strftime("%Y%m%d%H%M%S")
+                try:
+                    conn = sqlite3.connect(DB_NAME)
+                    c = conn.cursor()
+                    c.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?)", (fc, pn, pcat, pb, ps, pst, pc))
+                    conn.commit()
+                    conn.close()
+                    st.session_state.scanned_add_code = ""
+                    st.success("ثبت شد!")
+                except: st.error("کد تکراری است!")
+                
+    with tab_bulk:
+        st.info("💡 با این قابلیت می‌توانید صدها کالا را در یک چشم به هم زدن وارد سیستم کنید! ابتدا فایل نمونه را دانلود کنید، لیست اجناس را در آن پر کنید و سپس فایل تکمیل‌شده را آپلود کنید.")
+        
+        # ساخت فایل نمونه برای دانلود
+        sample_df = pd.DataFrame(columns=['کد کالا (اختیاری)', 'نام کالا', 'مناسب خودرو', 'دسته‌بندی', 'قیمت خرید', 'قیمت فروش', 'موجودی'])
+        sample_excel = convert_df_to_excel(sample_df)
+        st.download_button(label="📥 ۱. دانلود فایل نمونه اکسل (خام)", data=sample_excel, file_name="Template_Products.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        st.markdown("---")
+        uploaded_file = st.file_uploader("📤 ۲. فایل اکسل تکمیل‌شده را اینجا آپلود کنید:", type=['xlsx'])
+        
+        if uploaded_file is not None:
+            if st.button("🚀 ۳. پردازش و ثبت گروهی کالاها", type="primary", use_container_width=True):
+                try:
+                    bulk_df = pd.read_excel(uploaded_file)
+                    expected_cols = ['کد کالا (اختیاری)', 'نام کالا', 'مناسب خودرو', 'دسته‌بندی', 'قیمت خرید', 'قیمت فروش', 'موجودی']
+                    
+                    if all(col in bulk_df.columns for col in expected_cols):
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        success_count = 0
+                        error_count = 0
+                        
+                        for index, row in bulk_df.iterrows():
+                            p_name = str(row['نام کالا'])
+                            if p_name == 'nan' or not p_name.strip(): 
+                                continue # اگر نام کالا خالی بود رد شو
+                                
+                            p_code = str(row['کد کالا (اختیاری)'])
+                            if p_code == 'nan' or not p_code.strip():
+                                fc = "AUTO-" + get_iran_time().strftime("%Y%m%d%H%M%S") + str(index)
+                            else:
+                                fc = p_code.strip()
+                                
+                            pc = str(row['مناسب خودرو']) if str(row['مناسب خودرو']) != 'nan' else "عمومی"
+                            pcat = str(row['دسته‌بندی']) if str(row['دسته‌بندی']) != 'nan' else "سایر"
+                            pb = float(row['قیمت خرید']) if str(row['قیمت خرید']) != 'nan' else 0
+                            ps = float(row['قیمت فروش']) if str(row['قیمت فروش']) != 'nan' else 0
+                            pst = int(row['موجودی']) if str(row['موجودی']) != 'nan' else 0
+
+                            try:
+                                c.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?)", (fc, p_name, pcat, pb, ps, pst, pc))
+                                success_count += 1
+                            except sqlite3.IntegrityError:
+                                error_count += 1
+
+                        conn.commit()
+                        conn.close()
+                        
+                        if success_count > 0:
+                            st.success(f"✅ عالی! {success_count} کالا با موفقیت به انبار اضافه شد.")
+                        if error_count > 0:
+                            st.warning(f"⚠️ {error_count} کالا ثبت نشد (احتمالاً کد آن‌ها تکراری بوده است).")
+                    else:
+                        st.error("❌ ستون‌های فایل اکسل با نمونه همخوانی ندارد. لطفاً فقط فایل نمونه را پر کنید.")
+                except Exception as e:
+                    st.error(f"خطا در خواندن فایل: {e}")
 
 # ==========================================
 # داشبورد و گزارش‌ها
