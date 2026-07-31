@@ -149,18 +149,20 @@ if "user_name" not in st.session_state: st.session_state.user_name = None
 if "last_invoice" not in st.session_state: st.session_state.last_invoice = None
 if "scanned_add_code" not in st.session_state: st.session_state.scanned_add_code = ""
 
-# راه‌اندازی متغیرهای حافظه برای تکمیل خودکار فرم‌ها (بدون این‌ها فیلدها پر نمی‌شوند)
+# تنظیم متغیرهای حافظه برای فرم‌ها به شکلی که ارور ندهد
 if "name_s" not in st.session_state: st.session_state["name_s"] = ""
 if "phone_s" not in st.session_state: st.session_state["phone_s"] = ""
 if "car_s" not in st.session_state: st.session_state["car_s"] = ""
 if "last_search_sale" not in st.session_state: st.session_state.last_search_sale = ""
 if "vip_search_sale_input" not in st.session_state: st.session_state.vip_search_sale_input = ""
+if "clear_sale_form" not in st.session_state: st.session_state.clear_sale_form = False
 
 if "name_srv" not in st.session_state: st.session_state["name_srv"] = ""
 if "phone_srv" not in st.session_state: st.session_state["phone_srv"] = ""
 if "car_srv" not in st.session_state: st.session_state["car_srv"] = ""
 if "last_search_srv" not in st.session_state: st.session_state.last_search_srv = ""
 if "vip_search_srv_input" not in st.session_state: st.session_state.vip_search_srv_input = ""
+if "clear_srv_form" not in st.session_state: st.session_state.clear_srv_form = False
 
 st.sidebar.title("🚗 سیستم فروشگاه اسپرت")
 st.sidebar.markdown("---")
@@ -337,9 +339,19 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
-                    # 🌟 راه حل قطعی و زنده برای تکمیل فرم مشتری (جستجوی متنی خالص)
+                    # 🌟 راه حل قطعی و زنده برای تکمیل فرم مشتری (جلوگیری از ارور StreamlitAPIException)
                     st.markdown("---")
                     st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
+                    
+                    # اگر از دور قبل فلگ پاکسازی روشن مانده، مقادیر را اینجا در اول کار خالی می‌کنیم
+                    if st.session_state.get('clear_sale_form'):
+                        st.session_state["name_s"] = ""
+                        st.session_state["phone_s"] = ""
+                        st.session_state["car_s"] = ""
+                        st.session_state.last_search_sale = ""
+                        st.session_state["vip_search_sale_input"] = ""
+                        st.session_state['clear_sale_form'] = False
+
                     vip_search_q = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری قدیمی را تایپ کرده و Enter بزنید:", key="vip_search_sale_input")
                     
                     # پردازش جستجو در دیتابیس و پر کردن خودکار فرم‌ها در پس‌زمینه
@@ -396,12 +408,8 @@ if choice == "🛒 ثبت فروش / خدمات":
 
                             st.session_state.last_invoice = {"date":now_str, "c_name":c_name or "نقدی", "c_phone":c_phone, "c_car":c_car, "p_name":product[1], "qty":f_qty, "price":product[4], "install":f_install, "discount":f_discount, "total":total_bill, "staff":s_staff}
                             
-                            # خالی کردن اتوماتیک فرم‌ها برای مشتری بعدی
-                            st.session_state["name_s"] = ""
-                            st.session_state["phone_s"] = ""
-                            st.session_state["car_s"] = ""
-                            st.session_state.last_search_sale = ""
-                            st.session_state["vip_search_sale_input"] = ""
+                            # فعال کردن فلگ برای خالی کردن فرم‌ها در اجرای بعدی (جلوگیری از ارور استریم‌لیت)
+                            st.session_state['clear_sale_form'] = True
                             
                             st.success("فروش ثبت شد!")
                             st.rerun()
@@ -422,9 +430,18 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
-        # 🌟 ارتقای بخش جستجو برای بخش خدمات
+        # 🌟 ارتقای بخش جستجو برای بخش خدمات به روش فلگ‌گذاری
         st.markdown("---")
         st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
+        
+        if st.session_state.get('clear_srv_form'):
+            st.session_state["name_srv"] = ""
+            st.session_state["phone_srv"] = ""
+            st.session_state["car_srv"] = ""
+            st.session_state.last_search_srv = ""
+            st.session_state["vip_search_srv_input"] = ""
+            st.session_state['clear_srv_form'] = False
+
         vip_search_q_srv = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_srv_input")
         
         if vip_search_q_srv and vip_search_q_srv != st.session_state.last_search_srv:
@@ -470,12 +487,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                 conn.close()
                 st.session_state.last_invoice = {"date":now_str, "c_name":s_cname or "نقدی", "c_phone":s_cphone, "c_car":s_ccar, "p_name":s_name, "qty":0, "price":0, "install":s_fee, "discount":0, "total":s_fee, "staff":s_staff_srv}
                 
-                # خالی کردن اتوماتیک فرم‌ها برای مشتری بعدی
-                st.session_state["name_srv"] = ""
-                st.session_state["phone_srv"] = ""
-                st.session_state["car_srv"] = ""
-                st.session_state.last_search_srv = ""
-                st.session_state["vip_search_srv_input"] = ""
+                st.session_state['clear_srv_form'] = True
                 
                 st.success("خدمات ثبت شد!")
                 st.rerun()
