@@ -19,7 +19,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
 
-# ایمپورت اسکنر حرفه‌ای (اختیاری - در صورت نصب نبودن، برنامه crash نمی‌کند)
+# ایمپورت اسکنر حرفه‌ای (اختیاری)
 try:
     from streamlit_qrcode_scanner import qrcode_scanner
     HAS_SCANNER_PKG = True
@@ -27,7 +27,7 @@ except ImportError:
     HAS_SCANNER_PKG = False
 
 # ==========================================
-# تنظیمات صفحه و استایل‌ها (Mobile-First)
+# تنظیمات صفحه و استایل‌ها
 # ==========================================
 st.set_page_config(page_title="سیستم یکپارچه فروشگاه اسپرت", page_icon="🚗", layout="wide")
 
@@ -49,7 +49,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# لیست‌های پایه (Dropdown)
+# لیست‌های پایه
 # ==========================================
 CAR_MODELS = [
     "عمومی (همه خودروها)", "پراید", "پژو ۲۰۶ / ۲۰۷", "پژو پارس / ۴۰۵",
@@ -67,13 +67,12 @@ PERSIAN_FONT_CANDIDATES = [
 ]
 
 # ==========================================
-# توابع کمکی عمومی
+# توابع کمکی
 # ==========================================
 def get_iran_time():
     return datetime.now(pytz.timezone('Asia/Tehran'))
 
 def iran_naive():
-    """زمان لحظه‌ای ایران، بدون تایم‌زون - برای ذخیره یکدست در دیتابیس."""
     return get_iran_time().replace(tzinfo=None)
 
 def jalali_str(dt=None):
@@ -116,12 +115,8 @@ def show_toman_hint(amount, color="#2e7d32", label="معادل"):
         f"💳 {label}: {amount:,.0f} تومان</div>", unsafe_allow_html=True
     )
 
-def mobile_hint(phone):
-    if phone and not (phone.isdigit() and len(phone) == 11 and phone.startswith("09")):
-        st.caption("⚠️ فرمت معمول موبایل ایران: ۱۱ رقم و شروع با 09 (اختیاری، مانع ثبت نمی‌شود)")
-
 # ==========================================
-# دیتابیس (Supabase / SQLite Fallback)
+# دیتابیس
 # ==========================================
 @st.cache_resource
 def get_engine():
@@ -235,7 +230,7 @@ def build_full_backup():
     return output.getvalue()
 
 # ==========================================
-# تولید فاکتور PDF (A5 و فیش حرارتی)
+# تولید فاکتور PDF 
 # ==========================================
 def register_persian_font():
     for path in PERSIAN_FONT_CANDIDATES:
@@ -299,7 +294,6 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
     return buffer, has_font
 
 def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
-    # عرض 80 میلی‌متر استاندارد پرینترهای حرارتی
     page_width = 80 * mm
     page_height = 150 * mm
     buffer = io.BytesIO()
@@ -376,7 +370,7 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     return buffer
 
 # ==========================================
-# مدیریت وضعیت سیستم و لاگین
+# مدیریت لاگین
 # ==========================================
 for key in ["user_role", "user_name", "last_invoice"]:
     if key not in st.session_state: st.session_state[key] = None
@@ -387,9 +381,6 @@ if "clear_sale_form" not in st.session_state: st.session_state.clear_sale_form =
 shop_name_display = get_setting("shop_name", "فروشگاه لوازم جانبی و اسپرت خودرو")
 st.sidebar.title(f"🚗 {shop_name_display}")
 st.sidebar.caption(f"📡 اتصال دیتابیس: {db_type}")
-if db_type.startswith("SQLite"):
-    st.sidebar.warning("⚠️ دیتابیس محلی (SQLite) فعال است. اگر این برنامه روی Streamlit Cloud اجرا می‌شود، با هر ری‌استارت سرور تمام اطلاعات پاک خواهد شد. برای رفع این خطر جدی به بخش «⚙️ تنظیمات» مراجعه کنید.")
-st.sidebar.markdown("---")
 
 if st.session_state.user_role is None:
     st.sidebar.subheader("🔐 ورود به سیستم")
@@ -429,22 +420,6 @@ if st.session_state.user_role is None:
 
 st.sidebar.success(f"👤 کاربر فعال: {st.session_state.user_name}")
 
-if st.session_state.user_role == "Staff":
-    with st.sidebar.expander("🔑 تغییر رمز عبور من"):
-        old_pw = st.text_input("رمز فعلی", type="password", key="old_pw_change")
-        new_pw = st.text_input("رمز جدید (حداقل ۴ حرف)", type="password", key="new_pw_change")
-        if st.button("ثبت رمز جدید"):
-            if len(new_pw) < 4:
-                st.error("رمز جدید باید حداقل ۴ حرف باشد.")
-            else:
-                with engine.begin() as conn:
-                    curr = conn.execute(text("SELECT password FROM staff WHERE name=:n"), {"n": st.session_state.user_name}).fetchone()
-                    if curr and curr[0] == hash_password(old_pw):
-                        conn.execute(text("UPDATE staff SET password=:p WHERE name=:n"), {"p": hash_password(new_pw), "n": st.session_state.user_name})
-                        st.success("رمز با موفقیت تغییر کرد!")
-                    else:
-                        st.error("رمز فعلی اشتباه است.")
-
 if st.sidebar.button("خروج از سیستم"):
     st.session_state.user_role = None
     st.session_state.user_name = None
@@ -482,7 +457,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                     scanned_code = qrcode_scanner(key='pro_scanner_sale')
                     if scanned_code: code_input = scanned_code
                 else:
-                    st.warning("پکیج اسکنر (streamlit-qrcode-scanner) نصب نیست.")
+                    st.warning("پکیج اسکنر نصب نیست.")
             elif scan_method == "جستجوی نام کالا":
                 search_q = st.text_input("نام کالا یا ماشین:")
                 if search_q:
@@ -542,9 +517,7 @@ if choice == "🛒 ثبت فروش / خدمات":
 
                     cc1, cc2 = st.columns(2)
                     with cc1: c_name = st.text_input("نام مشتری", key="name_s")
-                    with cc2:
-                        c_phone = st.text_input("موبایل", key="phone_s")
-                        mobile_hint(c_phone)
+                    with cc2: c_phone = st.text_input("موبایل", key="phone_s")
 
                     car_opt = st.selectbox("مدل ماشین", CAR_MODELS + ["سایر (تایپ دستی)"])
                     c_car = st.text_input("لطفاً نام خودرو را وارد کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
@@ -555,11 +528,14 @@ if choice == "🛒 ثبت فروش / خدمات":
                         net_prof = ((product['sale_price'] - product['purchase_price']) * f_qty) + f_install - f_discount
                         total_bill = (product['sale_price'] * f_qty) + f_install - f_discount
 
-                        with engine.begin() as conn:
-                            res = conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c AND stock >= :q"), {"q": f_qty, "c": code_input})
-                            if res.rowcount == 0:
-                                st.error("موجودی کافی نیست! (احتمالاً هم‌زمان توسط شخص دیگری فروخته شده)")
-                            else:
+                        try:
+                            with engine.begin() as conn:
+                                curr_stock = conn.execute(text("SELECT stock FROM products WHERE code=:c"), {"c": code_input}).scalar()
+                                if curr_stock is None or curr_stock < f_qty:
+                                    raise Exception("Insufficient_Stock")
+
+                                conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c"), {"q": f_qty, "c": code_input})
+                                
                                 staff_rate = 0
                                 if s_staff != "ادمین (بدون پورسانت)":
                                     s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff}).fetchone()
@@ -573,16 +549,23 @@ if choice == "🛒 ثبت فروش / خدمات":
                                     "pc": code_input, "n": product['name'], "q": f_qty, "sp": product['sale_price'], "sd": now_str,
                                     "ts": now_dt, "cn": c_name, "cp": c_phone, "cm": c_car,
                                     "i": f_install, "np": net_prof, "sn": s_staff,
-                                    "sc": (net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": f_discount
+                                    "sc": float(net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": f_discount
                                 })
-                                st.session_state.last_invoice = {
-                                    "date": now_str, "c_name": c_name or "نقدی", "c_phone": c_phone, "c_car": c_car,
-                                    "p_name": product['name'], "qty": f_qty, "price": product['sale_price'],
-                                    "install": f_install, "discount": f_discount, "total": total_bill, "staff": s_staff
-                                }
-                                st.session_state['clear_sale_form'] = True
-                                st.success("فروش ثبت شد!")
-                                st.rerun()
+
+                            st.session_state.last_invoice = {
+                                "date": now_str, "c_name": c_name or "نقدی", "c_phone": c_phone, "c_car": c_car,
+                                "p_name": product['name'], "qty": f_qty, "price": product['sale_price'],
+                                "install": f_install, "discount": f_discount, "total": total_bill, "staff": s_staff
+                            }
+                            st.session_state['clear_sale_form'] = True
+                            st.success("فروش با موفقیت ثبت شد و از انبار کسر گردید!")
+                            st.rerun()
+
+                        except Exception as e:
+                            if "Insufficient_Stock" in str(e):
+                                st.error("موجودی کافی نیست! (احتمالاً هم‌زمان توسط شخص دیگری فروخته شده)")
+                            else:
+                                st.error(f"خطا در ثبت فروش: {e}")
 
     with tab_service:
         s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
@@ -594,9 +577,7 @@ if choice == "🛒 ثبت فروش / خدمات":
 
         sc1, sc2 = st.columns(2)
         with sc1: s_cname = st.text_input("نام مشتری", key="name_srv_s")
-        with sc2:
-            s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
-            mobile_hint(s_cphone)
+        with sc2: s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
 
         car_opt_srv = st.selectbox("مدل خودرو", CAR_MODELS + ["سایر (تایپ دستی)"], key="car_srv_opt")
         s_ccar = st.text_input("لطفاً نام خودرو را وارد کنید:", key="car_srv_txt") if car_opt_srv == "سایر (تایپ دستی)" else car_opt_srv
@@ -606,65 +587,85 @@ if choice == "🛒 ثبت فروش / خدمات":
                 now_dt = iran_naive()
                 now_str = jalali_str(now_dt)
 
-                with engine.begin() as conn:
-                    staff_rate = 0
-                    if s_staff_srv != "ادمین (بدون پورسانت)":
-                        s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff_srv}).fetchone()
-                        if s_res: staff_rate = s_res[0]
+                try:
+                    with engine.begin() as conn:
+                        staff_rate = 0
+                        if s_staff_srv != "ادمین (بدون پورسانت)":
+                            s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff_srv}).fetchone()
+                            if s_res: staff_rate = s_res[0]
 
-                    conn.execute(text("""
-                        INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
-                        VALUES ('SERVICE', :n, 0, 0, :sd, :ts, :cn, :cp, :cm, :i, :i, :sn, :sc, 0)
-                    """), {"n": s_name.strip(), "sd": now_str, "ts": now_dt, "cn": s_cname, "cp": s_cphone, "cm": s_ccar,
-                           "i": s_fee, "sn": s_staff_srv, "sc": s_fee * (staff_rate / 100.0)})
+                        conn.execute(text("""
+                            INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
+                            VALUES ('SERVICE', :n, 0, 0, :sd, :ts, :cn, :cp, :cm, :i, :i, :sn, :sc, 0)
+                        """), {"n": s_name.strip(), "sd": now_str, "ts": now_dt, "cn": s_cname, "cp": s_cphone, "cm": s_ccar,
+                               "i": s_fee, "sn": s_staff_srv, "sc": s_fee * (staff_rate / 100.0)})
 
-                st.session_state.last_invoice = {
-                    "date": now_str, "c_name": s_cname or "نقدی", "c_phone": s_cphone, "c_car": s_ccar,
-                    "p_name": s_name.strip(), "qty": 0, "price": 0, "install": s_fee, "discount": 0,
-                    "total": s_fee, "staff": s_staff_srv
-                }
-                st.success("خدمات ثبت شد!")
-                st.rerun()
+                    st.session_state.last_invoice = {
+                        "date": now_str, "c_name": s_cname or "نقدی", "c_phone": s_cphone, "c_car": s_ccar,
+                        "p_name": s_name.strip(), "qty": 0, "price": 0, "install": s_fee, "discount": 0,
+                        "total": s_fee, "staff": s_staff_srv
+                    }
+                    st.success("خدمات ثبت شد!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطا: {e}")
             else:
                 st.error("شرح و مبلغ الزامی است.")
 
     with tab_refund:
         if st.session_state.user_role == "Admin":
-            refund_search = st.text_input("🔍 جستجو در فاکتورها (نام کالا، مشتری یا پرسنل):", key="refund_search")
-            base_query = "SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales"
-            if refund_search:
-                recent_sales = pd.read_sql_query(
-                    text(base_query + " WHERE name LIKE :q OR customer_name LIKE :q OR staff_name LIKE :q ORDER BY id DESC LIMIT 100"),
-                    engine, params={"q": f"%{refund_search}%"}
+            st.markdown("ابتدا کالای مرجوعی را پیدا کنید:")
+            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method")
+            ref_code = ""
+
+            if ref_method == "کیبورد / بارکدخوان فیزیکی":
+                ref_code = st.text_input("کد کالا را وارد/اسکن کنید:", key="ref_barcode")
+            elif ref_method == "دوربین (اسکنر خودکار)":
+                if HAS_SCANNER_PKG:
+                    scanned_ref = qrcode_scanner(key='ref_scanner')
+                    if scanned_ref: ref_code = scanned_ref
+                else:
+                    st.warning("پکیج اسکنر نصب نیست.")
+            elif ref_method == "جستجوی نام کالا":
+                ref_q = st.text_input("نام کالا:", key="ref_name")
+                if ref_q:
+                    ref_df = pd.read_sql_query(
+                        text("SELECT code, name FROM products WHERE name LIKE :q"),
+                        engine, params={"q": f"%{ref_q}%"}
+                    )
+                    if not ref_df.empty:
+                        label_map = {f"{r['name']} - کد: {r['code']}": r['code'] for _, r in ref_df.iterrows()}
+                        picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="ref_sel")
+                        if picked_label:
+                            ref_code = label_map[picked_label]
+            
+            if ref_code:
+                st.markdown("---")
+                st.markdown("**فاکتورهای اخیر ثبت‌شده برای این کالا:**")
+                sales_of_product = pd.read_sql_query(
+                    text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 20"),
+                    engine, params={"c": ref_code}
                 )
-            else:
-                recent_sales = pd.read_sql_query(text(base_query + " ORDER BY id DESC LIMIT 50"), engine)
+                if not sales_of_product.empty:
+                    st.dataframe(sales_of_product.rename(columns={'id': 'کد', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
+                    
+                    refund_id = st.number_input("کد ردیف فاکتور (کد) جهت ابطال را وارد کنید:", min_value=0, step=1)
+                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت به انبار")
 
-            recent_sales = recent_sales.rename(columns={
-                'id': 'کد', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد',
-                'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'
-            })
-
-            if not recent_sales.empty:
-                st.dataframe(recent_sales, hide_index=True, use_container_width=True)
-                refund_id = st.number_input("کد ردیف فاکتور (id) جهت ابطال:", min_value=0, step=1)
-                confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت به انبار")
-
-                if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
-                    with engine.begin() as conn:
-                        sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i"), {"i": refund_id}).mappings().fetchone()
-                        if sale_rec:
-                            if sale_rec['product_code'] != 'SERVICE':
+                    if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
+                        with engine.begin() as conn:
+                            sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i AND product_code=:c"), {"i": refund_id, "c": ref_code}).mappings().fetchone()
+                            if sale_rec:
                                 conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
-                            conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
-                            st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
-                            st.rerun()
-                        else:
-                            st.error("فاکتوری با این کد یافت نشد.")
-            else:
-                st.warning("فاکتوری یافت نشد.")
+                                conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
+                                st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
+                                st.rerun()
+                            else:
+                                st.error("فاکتوری با این کد برای کالای انتخابی یافت نشد.")
+                else:
+                    st.info("فاکتوری برای این کالا یافت نشد.")
         else:
-            st.error("فقط ادمین دسترسی دارد.")
+            st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
     if st.session_state.last_invoice:
         inv = st.session_state.last_invoice
@@ -676,12 +677,8 @@ if choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
-        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
-        
-        if not has_font:
-            st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد. راهنمای رفع در فایل README آمده است.")
         
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
@@ -712,7 +709,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                 st.rerun()
 
 # ==========================================
-# 2. مدیریت انبار (ادمین: ویرایش/حذف/اصلاح موجودی)
+# 2. مدیریت انبار
 # ==========================================
 elif choice == "📦 مدیریت انبار":
     st.header("📦 مدیریت انبار")
@@ -796,7 +793,7 @@ elif choice == "📦 مدیریت انبار":
 
     with tab_adj:
         st.subheader("⚖️ اصلاح دستی موجودی")
-        st.caption("برای مواردی مثل انبارگردانی، کالای آسیب‌دیده یا اصلاح اشتباه ثبتی قبلی استفاده کنید. هر اصلاح در تاریخچه ثبت می‌شود.")
+        st.caption("برای مواردی مثل انبارگردانی، کالای آسیب‌دیده یا اصلاح اشتباه ثبتی قبلی استفاده کنید.")
         
         has_products = False
         with engine.connect() as conn:
@@ -818,9 +815,6 @@ elif choice == "📦 مدیریت انبار":
                         picked_code = scanned_adj
                 else:
                     st.warning("پکیج اسکنر نصب نیست.")
-                    code_manual = st.text_input("بارکد را دستی وارد کنید:", key="adj_manual_input")
-                    if code_manual:
-                        picked_code = code_manual
             elif adj_method == "جستجوی نام کالا":
                 search_q = st.text_input("نام کالا یا ماشین:")
                 if search_q:
@@ -865,13 +859,6 @@ elif choice == "📦 مدیریت انبار":
                                              {"c": picked_code, "q": signed, "r": adj_reason, "sn": st.session_state.user_name, "ts": iran_naive()})
                             st.success("موجودی اصلاح شد.")
                             st.rerun()
-
-            recent_adj = pd.read_sql_query("""SELECT product_code as 'کد', change_qty as 'تغییر', reason as 'دلیل',
-                                                      staff_name as 'ثبت‌کننده', timestamp as 'زمان'
-                                               FROM stock_adjustments ORDER BY id DESC LIMIT 20""", engine)
-            if not recent_adj.empty:
-                st.markdown("**آخرین اصلاحات:**")
-                st.dataframe(recent_adj, hide_index=True, use_container_width=True)
 
 # ==========================================
 # 2ب. جستجوی انبار (پرسنل فروش - فقط نمایش)
@@ -998,7 +985,7 @@ elif choice == "➕ افزودن کالا":
                     if error_count > 0: st.warning(f"⚠️ {error_count} ردیف ثبت نشد (کد تکراری یا داده نامعتبر) - شماره ردیف در اکسل: {error_rows}")
 
 # ==========================================
-# 4. داشبورد و گزارش‌ها با فیلتر پیشرفته
+# 4. داشبورد و گزارش‌ها 
 # ==========================================
 elif choice == "📊 گزارش‌ها و داشبورد":
     st.header("📊 داشبورد مدیریت مالی")
@@ -1010,7 +997,7 @@ elif choice == "📊 گزارش‌ها و داشبورد":
 
     time_filter = st.selectbox("📅 فیلتر بازه زمانی:", ["امروز", "۷ روز گذشته", "ماه شمسی جاری", "بازه دلخواه", "همه زمان‌ها"])
 
-    end_dt = iran_now
+    end_dt = iran_now + timedelta(days=1)
     if time_filter == "امروز":
         start_dt = today_start
     elif time_filter == "۷ روز گذشته":
@@ -1025,32 +1012,31 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             start_dt = jdatetime.datetime.strptime(from_str.strip(), '%Y/%m/%d').togregorian()
             end_dt = jdatetime.datetime.strptime(to_str.strip(), '%Y/%m/%d').togregorian() + timedelta(days=1)
         except ValueError:
-            st.error("فرمت تاریخ نامعتبر است. لطفاً به‌صورت 1403/06/10 وارد کنید.")
+            st.error("فرمت تاریخ نامعتبر است.")
             start_dt = today_start
     else:
-        start_dt = iran_now - timedelta(days=3650)  # ده سال یعنی «همه زمان‌ها»
+        start_dt = iran_now - timedelta(days=3650) 
 
-    # فیلتر مستقیم روی دیتابیس انجام می‌شود تا روی رم سیستم مغازه فشار نیاید
-    sales_query = text("SELECT * FROM sales WHERE timestamp >= :s AND timestamp <= :e")
-    sales_df = pd.read_sql_query(sales_query, engine, params={"s": start_dt, "e": end_dt})
-    
-    exp_query = text("SELECT * FROM expenses WHERE timestamp >= :s AND timestamp <= :e")
-    exp_df = pd.read_sql_query(exp_query, engine, params={"s": start_dt, "e": end_dt})
+    sales_df = pd.read_sql_query("SELECT * FROM sales", engine)
+    exp_df = pd.read_sql_query("SELECT * FROM expenses", engine)
 
     if not sales_df.empty:
-        sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'])
+        sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'], errors='coerce')
         if sales_df['timestamp'].dt.tz is not None:
             sales_df['timestamp'] = sales_df['timestamp'].dt.tz_convert(None)
+            
+        sales_df = sales_df[(sales_df['timestamp'] >= start_dt) & (sales_df['timestamp'] <= end_dt)]
         
         for col in ['discount', 'install_fee', 'staff_commission', 'net_profit']:
             sales_df[col] = sales_df[col].fillna(0)
         sales_df['درآمد نهایی'] = (sales_df['quantity'] * sales_df['sale_price']) + sales_df['install_fee'] - sales_df['discount']
 
     if not exp_df.empty:
-        exp_df['timestamp'] = pd.to_datetime(exp_df['timestamp'])
+        exp_df['timestamp'] = pd.to_datetime(exp_df['timestamp'], errors='coerce')
         if exp_df['timestamp'].dt.tz is not None:
             exp_df['timestamp'] = exp_df['timestamp'].dt.tz_convert(None)
-        
+            
+        exp_df = exp_df[(exp_df['timestamp'] >= start_dt) & (exp_df['timestamp'] <= end_dt)]
         if 'category' not in exp_df.columns:
             exp_df['category'] = 'سایر'
         exp_df['category'] = exp_df['category'].fillna('سایر')
@@ -1072,7 +1058,7 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             if tg_token and tg_chat_id and st.button("ارسال گزارش به تلگرام 🚀"):
                 msg = f"📊 گزارش فیلتر شده ({time_filter}):\nدرآمد: {total_rev:,.0f}\nسود خالص: {total_prof:,.0f}"
                 if send_telegram_msg(tg_token, tg_chat_id, msg): st.success("ارسال شد!")
-                else: st.error("خطا در ارسال. توکن یا chat id را در تنظیمات Secrets بررسی کنید.")
+                else: st.error("خطا در ارسال.")
         else:
             st.info("داده‌ای در این بازه یافت نشد.")
 
@@ -1237,7 +1223,7 @@ elif choice == "⚙️ تنظیمات و پشتیبان‌گیری":
     st.header("⚙️ تنظیمات فروشگاه")
 
     if db_type.startswith("SQLite"):
-        st.error("⚠️ در حال حاضر برنامه از دیتابیس محلی (SQLite) استفاده می‌کند. اگر این برنامه روی Streamlit Cloud اجرا می‌شود، با هر ری‌استارت یا آپدیت سرور، تمام اطلاعات (فروش‌ها، انبار، مشتریان) برای همیشه پاک خواهد شد. برای جلوگیری از این خطر جدی، یک دیتابیس ابری مثل Supabase تنظیم کرده و آدرس آن را در بخش Secrets پروژه‌تان در Streamlit Cloud، با ساختار [supabase] db_url وارد کنید (نمونه در فایل secrets_example.toml).")
+        st.error("⚠️ در حال حاضر برنامه از دیتابیس محلی (SQLite) استفاده می‌کند. اگر این برنامه روی Streamlit Cloud اجرا می‌شود، با هر ری‌استارت یا آپدیت سرور، تمام اطلاعات (فروش‌ها، انبار، مشتریان) برای همیشه پاک خواهد شد. برای جلوگیری از این خطر جدی، یک دیتابیس ابری مثل Supabase تنظیم کرده و آدرس آن را در بخش Secrets پروژه‌تان در Streamlit Cloud، با ساختار [supabase] db_url وارد کنید.")
 
     with st.form("shop_settings_form"):
         s_name = st.text_input("نام فروشگاه", value=get_setting("shop_name", "فروشگاه لوازم جانبی و اسپرت خودرو"))
@@ -1256,7 +1242,7 @@ elif choice == "⚙️ تنظیمات و پشتیبان‌گیری":
 
     st.markdown("---")
     st.subheader("📦 پشتیبان‌گیری کامل از اطلاعات")
-    st.caption("یک فایل اکسل چندشیتی شامل انبار، فروش‌ها، دفتر حساب، هزینه‌ها، پرسنل و تاریخچه اصلاح موجودی دانلود کنید. رمز عبور پرسنل در این فایل قرار نمی‌گیرد.")
+    st.caption("یک فایل اکسل چندشیتی شامل انبار، فروش‌ها، دفتر حساب، هزینه‌ها، پرسنل و تاریخچه اصلاح موجودی دانلود کنید.")
     backup_bytes = build_full_backup()
     st.download_button(
         label="📥 دانلود فایل پشتیبان کامل",
