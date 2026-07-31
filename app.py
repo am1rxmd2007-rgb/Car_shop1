@@ -797,36 +797,55 @@ elif choice == "📦 مدیریت انبار":
     with tab_adj:
         st.subheader("⚖️ اصلاح دستی موجودی")
         st.caption("برای مواردی مثل انبارگردانی، کالای آسیب‌دیده یا اصلاح اشتباه ثبتی قبلی استفاده کنید. هر اصلاح در تاریخچه ثبت می‌شود.")
-        all_products = pd.read_sql_query("SELECT code, name, stock FROM products ORDER BY name", engine)
-        if all_products.empty:
+        
+        has_products = False
+        with engine.connect() as conn:
+            if conn.execute(text("SELECT 1 FROM products LIMIT 1")).fetchone():
+                has_products = True
+                
+        if not has_products:
             st.info("هنوز کالایی ثبت نشده است.")
         else:
-            adj_method = st.radio("روش انتخاب کالا:", ("جستجو در لیست (متنی)", "اسکنر دوربین"), horizontal=True)
+            adj_method = st.radio("روش جستجو:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), horizontal=True)
             picked_code = ""
 
-            if adj_method == "جستجو در لیست (متنی)":
-                label_map = {f"{r['name']} (موجودی فعلی: {r['stock']}) - {r['code']}": r['code'] for _, r in all_products.iterrows()}
-                picked = st.selectbox("انتخاب کالا:", list(label_map.keys()))
-                if picked:
-                    picked_code = label_map[picked]
-            elif adj_method == "اسکنر دوربین":
+            if adj_method == "کیبورد / بارکدخوان فیزیکی":
+                picked_code = st.text_input("کد کالا را وارد/اسکن کنید:", key="adj_barcode_input")
+            elif adj_method == "دوربین (اسکنر خودکار)":
                 if HAS_SCANNER_PKG:
                     scanned_adj = qrcode_scanner(key='adj_scanner')
                     if scanned_adj:
                         picked_code = scanned_adj
                 else:
                     st.warning("پکیج اسکنر نصب نیست.")
-                    code_manual = st.text_input("بارکد را دستی وارد کنید:")
+                    code_manual = st.text_input("بارکد را دستی وارد کنید:", key="adj_manual_input")
                     if code_manual:
                         picked_code = code_manual
+            elif adj_method == "جستجوی نام کالا":
+                search_q = st.text_input("نام کالا یا ماشین:")
+                if search_q:
+                    like_q = f"%{search_q}%"
+                    m_df = pd.read_sql_query(
+                        text("SELECT code, name, stock, compatible_cars FROM products WHERE name LIKE :q OR compatible_cars LIKE :q"),
+                        engine, params={"q": like_q}
+                    )
+                    if not m_df.empty:
+                        label_map = {f"{r['name']} (مناسب: {r['compatible_cars']} | موجودی: {r['stock']}) - کد: {r['code']}": r['code'] for _, r in m_df.iterrows()}
+                        picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="adj_select_search")
+                        if picked_label:
+                            picked_code = label_map[picked_label]
+                    else:
+                        st.info("کالایی یافت نشد.")
 
             if picked_code:
-                current_prod = all_products[all_products['code'] == picked_code]
-                if current_prod.empty:
+                with engine.connect() as conn:
+                    current_prod = conn.execute(text("SELECT code, name, stock FROM products WHERE code=:c"), {"c": picked_code}).mappings().fetchone()
+                
+                if not current_prod:
                     st.error("کالایی با این کد یافت نشد.")
                 else:
-                    current_stock = int(current_prod['stock'].iloc[0])
-                    prod_name = current_prod['name'].iloc[0]
+                    current_stock = int(current_prod['stock'])
+                    prod_name = current_prod['name']
 
                     st.markdown(f"**📦 کالای انتخاب‌شده:** {prod_name} | **موجودی فعلی:** {current_stock}")
 
