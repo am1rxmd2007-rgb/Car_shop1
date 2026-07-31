@@ -7,6 +7,8 @@ import pytz
 import urllib.parse
 import os
 import io
+import hashlib
+import html
 
 # ایمپورت اسکنر حرفه‌ای
 try:
@@ -43,6 +45,29 @@ def convert_df_to_excel(df):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
+
+def get_admin_password():
+    # رمز ادمین رو از Secrets می‌خونه. اگه هنوز secrets.toml تنظیم نشده باشه
+    # (مثلاً همون اجرای اول روی سیستم شما) به یه رمز پیش‌فرض برمی‌گرده تا
+    # سایت خطا نده - ولی قبل از دیپلوی واقعی حتماً تو .streamlit/secrets.toml
+    # (که تو گیت‌هاب commit نمیشه) یه رمز جدید بذار.
+    try:
+        return st.secrets["admin_password"]
+    except Exception:
+        return "2613"
+
+def hash_password(raw_password):
+    return hashlib.sha256(str(raw_password).encode("utf-8")).hexdigest()
+
+def verify_staff_password(input_password, stored_password):
+    # اول با رمز هش‌شده مقایسه می‌کنه. اگه رمز قدیمی هنوز به‌صورت متن ساده
+    # ذخیره شده باشه (رمزهای قبل از این آپدیت)، با تطابق مستقیم قبولش می‌کنه
+    # و امضای needs_upgrade=True برمی‌گردونه تا خودکار هش بشه.
+    if stored_password == hash_password(input_password):
+        return True, False
+    if stored_password == input_password:
+        return True, True
+    return False, False
 
 # ==========================================
 # توابع دیتابیس
@@ -125,7 +150,7 @@ if st.session_state.user_role is None:
     if login_type == "صاحب مغازه (ادمین)":
         admin_pass = st.sidebar.text_input("رمز عبور ادمین:", type="password")
         if st.sidebar.button("ورود به پنل مدیریت"):
-            if admin_pass == "2613":
+            if admin_pass == get_admin_password():
                 st.session_state.user_role = "Admin"
                 st.session_state.user_name = "ادمین"
                 st.rerun()
@@ -147,7 +172,14 @@ if st.session_state.user_role is None:
                 res = c.fetchone()
                 conn.close()
                 
-                if res and staff_pass_input == res[0]:
+                is_valid, needs_upgrade = verify_staff_password(staff_pass_input, res[0]) if res else (False, False)
+                if is_valid:
+                    if needs_upgrade:
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        c.execute("UPDATE staff SET password=? WHERE name=?", (hash_password(staff_pass_input), staff_name_input))
+                        conn.commit()
+                        conn.close()
                     st.session_state.user_role = "Staff"
                     st.session_state.user_name = staff_name_input
                     st.rerun()
@@ -182,6 +214,7 @@ if st.session_state.user_role == "Admin":
     if os.path.exists(DB_NAME):
         with open(DB_NAME, "rb") as file:
             st.sidebar.download_button(label="💾 دانلود بک‌آپ دیتابیس", data=file, file_name=f"Backup_{datetime.now().strftime('%Y%m%d')}.db", mime="application/octet-stream")
+    st.sidebar.caption("⚠️ اگه این اپ روی Streamlit Community Cloud دیپلوی شده، این فایل با هر ریدیپلوی/ریستارت ممکنه پاک بشه. مرتب بک‌آپ بگیر یا به یه دیتابیس ابری پایدار وصل شو.")
             
     low_stock_df = get_low_stock_products()
     if not low_stock_df.empty:
@@ -208,7 +241,7 @@ if st.session_state.user_role == "Admin":
                     st.sidebar.warning(f"⚠️ فوری! {l_type} {row['person_name']}\nمبلغ: {row['amount']:,.0f} T\nسررسید: {due_date_str}")
                 else:
                     st.sidebar.info(f"عادی: {l_type} {row['person_name']}\nمبلغ: {row['amount']:,.0f} T\nسررسید: {due_date_str}")
-            except:
+            except (ValueError, TypeError):
                 st.sidebar.info(f"{l_type} {row['person_name']}\nمبلغ: {row['amount']:,.0f} T\nسررسید: {due_date_str}")
 
 # ==========================================
@@ -241,7 +274,10 @@ if choice == "🛒 ثبت فروش / خدمات":
                 search_q = st.text_input("نام کالا یا ماشین:")
                 if search_q:
                     conn = sqlite3.connect(DB_NAME)
-                    m_df = pd.read_sql_query(f"SELECT code, name, compatible_cars FROM products WHERE name LIKE '%{search_q}%' OR compatible_cars LIKE '%{search_q}%'", conn)
+                    m_df = pd.read_sql_query(
+                        "SELECT code, name, compatible_cars FROM products WHERE name LIKE ? OR compatible_cars LIKE ?",
+                        conn, params=(f"%{search_q}%", f"%{search_q}%")
+                    )
                     conn.close()
                     if not m_df.empty:
                         opts = (m_df['name'] + " (مناسب: " + m_df['compatible_cars'] + ") - کد: " + m_df['code']).tolist()
@@ -267,7 +303,8 @@ if choice == "🛒 ثبت فروش / خدمات":
                     if f_install >= 0:
                         st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {f_install:,.0f} تومان</div>", unsafe_allow_html=True)
                     
-                    f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, step=10000, value=0)
+                    max_discount = int((product[4] * f_qty) + f_install)
+                    f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, max_value=max_discount, step=10000, value=0)
                     if f_discount >= 0:
                         st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#d32f2f; font-weight:bold; font-size: 14px;'>🎁 معادل تخفیف: {f_discount:,.0f} تومان</div>", unsafe_allow_html=True)
                     
@@ -283,34 +320,36 @@ if choice == "🛒 ثبت فروش / خدمات":
                     c_car = st.text_input("مدل ماشین")
 
                     if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
-                        if product[5] >= f_qty:
-                            new_stock = product[5] - f_qty
-                            now_dt = get_iran_time()
-                            now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
-                            
-                            net_prof = ((product[4] - product[3]) * f_qty) + f_install - f_discount
-                            total_bill = (product[4] * f_qty) + f_install - f_discount
-                            
+                        now_dt = get_iran_time()
+                        now_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d - %H:%M')
+
+                        net_prof = ((product[4] - product[3]) * f_qty) + f_install - f_discount
+                        total_bill = (product[4] * f_qty) + f_install - f_discount
+
+                        conn = sqlite3.connect(DB_NAME)
+                        c = conn.cursor()
+                        # کاهش اتمی موجودی: فقط وقتی انجام میشه که هنوز موجودی کافی باشه.
+                        # این از فروش هم‌زمان بیشتر از موجودی واقعی (توسط دو نفر با هم) جلوگیری می‌کنه.
+                        c.execute("UPDATE products SET stock = stock - ? WHERE code = ? AND stock >= ?", (f_qty, code_input, f_qty))
+                        if c.rowcount == 0:
+                            conn.close()
+                            st.error("موجودی کافی نیست! (شاید هم‌زمان توسط شخص دیگری فروخته شده)")
+                        else:
                             staff_rate = 0
-                            conn = sqlite3.connect(DB_NAME)
-                            c = conn.cursor()
                             if s_staff != "ادمین (بدون پورسانت)":
                                 c.execute("SELECT commission_rate FROM staff WHERE name=?", (s_staff,))
                                 res = c.fetchone()
                                 if res: staff_rate = res[0]
                             staff_comm = net_prof * (staff_rate / 100.0) if net_prof > 0 else 0
-                            
-                            c.execute("UPDATE products SET stock=? WHERE code=?", (new_stock, code_input))
+
                             c.execute('''INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
                                       (code_input, product[1], f_qty, product[4], now_str, now_dt, c_name, c_phone, c_car, f_install, net_prof, s_staff, staff_comm, f_discount))
                             conn.commit()
                             conn.close()
-                            
+
                             st.session_state.last_invoice = {"date":now_str, "c_name":c_name or "نقدی", "c_phone":c_phone, "c_car":c_car, "p_name":product[1], "qty":f_qty, "price":product[4], "install":f_install, "discount":f_discount, "total":total_bill, "staff":s_staff}
                             st.success("فروش ثبت شد!")
                             st.rerun()
-                        else:
-                            st.error("موجودی کافی نیست!")
                 else:
                     st.warning("کالایی یافت نشد.")
 
@@ -363,7 +402,9 @@ if choice == "🛒 ثبت فروش / خدمات":
         st.subheader("🧾 فاکتور مشتری")
         dis_text = f"\n🎁 تخفیف اعمال شده: {inv['discount']:,} تومان" if inv['discount'] > 0 else ""
         inv_text = f"🧾 فاکتور فروشگاه\nتاریخ: {inv['date']}\n👤 مشتری: {inv['c_name']}\n🚗 خودرو: {inv['c_car']}\n👷‍♂️ مسئول: {inv['staff']}\n-------------------\n📦 شرح: {inv['p_name']}\n🔢 تعداد: {inv['qty']}\n💵 فی: {inv['price']:,} تومان\n🔧 اجرت: {inv['install']:,} تومان{dis_text}\n-------------------\n💰 جمع کل: {inv['total']:,} تومان\n✨ سپاس از اعتماد شما ✨"
-        st.markdown(f"<div class='invoice-box'>{inv_text.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+        # نسخه امن برای نمایش HTML (جلوگیری از تزریق کد از طریق نام مشتری/ماشین و ...)
+        safe_inv_html = html.escape(inv_text).replace(chr(10), '<br>')
+        st.markdown(f"<div class='invoice-box'>{safe_inv_html}</div>", unsafe_allow_html=True)
         enc = urllib.parse.quote(inv_text)
         w_link = f"https://wa.me/98{inv['c_phone'][1:]}?text={enc}" if inv['c_phone'].startswith('09') else f"https://wa.me/?text={enc}"
         t_link = f"https://t.me/share/url?url={enc}"
@@ -425,7 +466,10 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
             s_query = st.text_input("بخشی از نام یا کد را سرچ کنید:")
             if s_query:
                 conn = sqlite3.connect(DB_NAME)
-                m_df = pd.read_sql_query(f"SELECT code, name FROM products WHERE name LIKE '%{s_query}%' OR code LIKE '%{s_query}%'", conn)
+                m_df = pd.read_sql_query(
+                    "SELECT code, name FROM products WHERE name LIKE ? OR code LIKE ?",
+                    conn, params=(f"%{s_query}%", f"%{s_query}%")
+                )
                 conn.close()
                 if not m_df.empty:
                     opt = st.selectbox("انتخاب کالا:", (m_df['code'] + " - " + m_df['name']).tolist())
@@ -501,12 +545,13 @@ elif choice == "➕ افزودن کالا":
                 try:
                     conn = sqlite3.connect(DB_NAME)
                     c = conn.cursor()
-                    c.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?)", (fc, pn, pcat, pb, ps, pst, pc))
+                    c.execute("INSERT INTO products (code, name, category, purchase_price, sale_price, stock, compatible_cars) VALUES (?,?,?,?,?,?,?)", (fc, pn, pcat, pb, ps, pst, pc))
                     conn.commit()
                     conn.close()
                     st.session_state.scanned_add_code = ""
                     st.success("ثبت شد!")
-                except: st.error("کد تکراری است!")
+                except sqlite3.IntegrityError:
+                    st.error("کد تکراری است!")
                 
     with tab_bulk:
         st.info("💡 با این قابلیت می‌توانید صدها کالا را در یک چشم به هم زدن وارد سیستم کنید! ابتدا فایل نمونه را دانلود کنید، لیست اجناس را در آن پر کنید و سپس فایل تکمیل‌شده را آپلود کنید.")
@@ -549,7 +594,7 @@ elif choice == "➕ افزودن کالا":
                             pst = int(row['موجودی']) if str(row['موجودی']) != 'nan' else 0
 
                             try:
-                                c.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?)", (fc, p_name, pcat, pb, ps, pst, pc))
+                                c.execute("INSERT INTO products (code, name, category, purchase_price, sale_price, stock, compatible_cars) VALUES (?,?,?,?,?,?,?)", (fc, p_name, pcat, pb, ps, pst, pc))
                                 success_count += 1
                             except sqlite3.IntegrityError:
                                 error_count += 1
@@ -712,7 +757,8 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
             st.download_button(label=f"📥 دانلود لیست {title} (Excel)", data=ex_ledger, file_name=f"Ledger_{l_type}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"dl_{l_type}")
             
             did = st.number_input(f"برای حذف {title} کد را وارد کنید:", min_value=0, key=f"d_{l_type}")
-            if st.button("✅ تسویه و حذف از لیست", key=f"b_{l_type}"):
+            confirm_del = st.checkbox("تایید می‌کنم که می‌خوام این مورد رو برای همیشه حذف کنم", key=f"confirm_del_{l_type}")
+            if st.button("✅ تسویه و حذف از لیست", key=f"b_{l_type}", disabled=not confirm_del):
                 conn = sqlite3.connect(DB_NAME)
                 c = conn.cursor()
                 c.execute("DELETE FROM ledger WHERE id=?", (did,))
@@ -734,35 +780,39 @@ elif choice == "👥 مدیریت پرسنل (شاگردان)":
     with c1:
         new_staff_name = st.text_input("نام شاگرد (مثال: علی)")
     with c2:
-        new_staff_pass = st.text_input("رمز عبور اختصاصی شاگرد", value="1234")
+        new_staff_pass = st.text_input("رمز عبور اختصاصی شاگرد (حداقل ۴ کاراکتر)", value="")
     with c3:
         new_staff_rate = st.number_input("پورسانت از سود/اجرت (%)", min_value=0.0, max_value=100.0, value=20.0, step=1.0)
         
     if st.button("ثبت مشخصات شاگرد", use_container_width=True):
-        if new_staff_name and new_staff_pass:
+        if new_staff_name and new_staff_pass and len(new_staff_pass) >= 4:
             try:
                 conn = sqlite3.connect(DB_NAME)
                 c = conn.cursor()
-                c.execute("INSERT INTO staff (name, password, commission_rate, timestamp) VALUES (?,?,?,?)", (new_staff_name, new_staff_pass, new_staff_rate, get_iran_time()))
+                c.execute("INSERT INTO staff (name, password, commission_rate, timestamp) VALUES (?,?,?,?)", (new_staff_name, hash_password(new_staff_pass), new_staff_rate, get_iran_time()))
                 conn.commit()
                 conn.close()
-                st.success(f"شاگرد جدید ({new_staff_name}) با رمز عبور ثبت شد!")
-                st.rerun()
+                st.success(f"شاگرد جدید ({new_staff_name}) ثبت شد! رمز عبور: «{new_staff_pass}» — همین الان یادداشتش کن و به شاگرد بده، چون از این به بعد به‌صورت امن (هش‌شده) ذخیره می‌شه و دیگه قابل نمایش نیست.")
             except sqlite3.IntegrityError:
                 st.error("این نام قبلاً در سیستم ثبت شده است.")
+        elif new_staff_name and new_staff_pass:
+            st.error("رمز عبور باید حداقل ۴ کاراکتر باشد.")
         else:
             st.error("لطفاً نام و رمز عبور را وارد کنید.")
             
     st.markdown("---")
     st.subheader("📋 لیست شاگردان مغازه")
     conn = sqlite3.connect(DB_NAME)
-    staff_df_disp = pd.read_sql_query("SELECT id as 'کد سیستم', name as 'نام شاگرد', password as 'رمز عبور', commission_rate as 'درصد پورسانت (%)' FROM staff", conn)
+    staff_df_disp = pd.read_sql_query("SELECT id as 'کد سیستم', name as 'نام شاگرد', commission_rate as 'درصد پورسانت (%)' FROM staff", conn)
     conn.close()
     
     if not staff_df_disp.empty:
+        staff_df_disp['رمز عبور'] = '🔒 هش‌شده'
         st.dataframe(staff_df_disp, hide_index=True, use_container_width=True)
+        st.caption("رمزها به‌صورت امن ذخیره می‌شن و دیگه قابل نمایش نیستن. برای عوض کردن رمز یه شاگرد، فعلاً باید حذفش کنی و دوباره با رمز جدید ثبتش کنی.")
         del_staff_id = st.number_input("برای اخراج و حذف شاگرد، کد سیستم او را وارد کنید:", min_value=0)
-        if st.button("🗑️ حذف شاگرد"):
+        confirm_staff_del = st.checkbox("تایید می‌کنم که می‌خوام این شاگرد رو حذف کنم")
+        if st.button("🗑️ حذف شاگرد", disabled=not confirm_staff_del):
             conn = sqlite3.connect(DB_NAME)
             c = conn.cursor()
             c.execute("DELETE FROM staff WHERE id=?", (del_staff_id,))
