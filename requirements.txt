@@ -1,7 +1,6 @@
 streamlit
 pandas
-streamlit-qrcode-scanner
 jdatetime
-Pillow
 pytz
 openpyxl
+streamlit-qrcode-scanner
