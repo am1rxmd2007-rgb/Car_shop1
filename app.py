@@ -17,6 +17,7 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A5
+from reportlab.lib.units import mm
 
 # ایمپورت اسکنر حرفه‌ای (اختیاری - در صورت نصب نبودن، برنامه crash نمی‌کند)
 try:
@@ -141,9 +142,6 @@ engine, db_type = get_engine()
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
-    # نکته: در SQLite، "INTEGER PRIMARY KEY AUTOINCREMENT" باید یکجا و به‌عنوان
-    # تنها تعریف کلید اصلی ستون باشد؛ اضافه‌کردن یک "PRIMARY KEY(id)" جداگانه
-    # باعث خطای "more than one primary key" و کرش کامل برنامه می‌شود.
     id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
     with engine.begin() as conn:
@@ -194,9 +192,6 @@ def init_db():
             )
         """))
 
-    # --- migration سبک برای دیتابیس‌های قدیمی که این نسخه از برنامه را نداشتند ---
-    # هر کدام جدا اجرا می‌شود تا اگر ستونی از قبل وجود داشت، بقیه مهاجرت‌ها مختل نشوند.
-    # این یعنی نصب/آپدیت این کد روی دیتابیس واقعی و پر از اطلاعات قبلی شما، هیچ داده‌ای را پاک نمی‌کند.
     migrations = [
         "ALTER TABLE products ADD COLUMN min_stock INTEGER DEFAULT 3",
         "ALTER TABLE ledger ADD COLUMN settled_at TIMESTAMP",
@@ -208,7 +203,7 @@ def init_db():
             with engine.begin() as conn:
                 conn.execute(text(sql))
         except Exception:
-            pass  # یعنی ستون از قبل وجود دارد؛ بی‌اهمیت است
+            pass  
 
 init_db()
 
@@ -240,7 +235,7 @@ def build_full_backup():
     return output.getvalue()
 
 # ==========================================
-# تولید فاکتور PDF
+# تولید فاکتور PDF (A5 و فیش حرارتی)
 # ==========================================
 def register_persian_font():
     for path in PERSIAN_FONT_CANDIDATES:
@@ -302,6 +297,83 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
     c.save()
     buffer.seek(0)
     return buffer, has_font
+
+def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
+    # عرض 80 میلی‌متر استاندارد پرینترهای حرارتی
+    page_width = 80 * mm
+    page_height = 150 * mm
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(page_width, page_height))
+    
+    has_font = register_persian_font()
+    font_name = 'Persian' if has_font else 'Helvetica'
+    bold_font = 'Persian' if has_font else 'Helvetica-Bold'
+
+    def draw_rtl_text(text_str, x, y, font=None, size=10, align="right"):
+        c.setFont(font or font_name, size)
+        if has_font:
+            reshaped_text = arabic_reshaper.reshape(str(text_str))
+            bidi_text = get_display(reshaped_text)
+            if align == "center":
+                c.drawCentredString(x, y, bidi_text)
+            else:
+                c.drawRightString(x, y, bidi_text)
+        else:
+            if align == "center":
+                c.drawCentredString(x, y, str(text_str))
+            else:
+                c.drawRightString(x, y, str(text_str))
+
+    center_x = page_width / 2
+    right_x = page_width - 15
+
+    draw_rtl_text(shop_name, center_x, page_height - 20, font=bold_font, size=12, align="center")
+    y = page_height - 35
+    if shop_phone:
+        draw_rtl_text(f"تلفن: {shop_phone}", center_x, y, size=8, align="center")
+        y -= 15
+
+    c.setDash(2, 2)
+    c.line(15, y, page_width - 15, y)
+    c.setDash()
+    y -= 15
+
+    draw_rtl_text(f"تاریخ: {inv['date']}", right_x, y, size=8)
+    y -= 12
+    draw_rtl_text(f"مشتری: {inv['c_name']}", right_x, y, size=8)
+    y -= 12
+    draw_rtl_text(f"خودرو: {inv['c_car']}", right_x, y, size=8)
+    y -= 15
+
+    c.setDash(2, 2)
+    c.line(15, y, page_width - 15, y)
+    c.setDash()
+    y -= 15
+
+    draw_rtl_text(f"شرح: {inv['p_name']}", right_x, y, font=bold_font, size=9)
+    y -= 14
+    draw_rtl_text(f"تعداد: {inv['qty']} عدد x {inv['price']:,.0f}", right_x, y, size=9)
+    y -= 12
+    if inv['install'] > 0:
+        draw_rtl_text(f"اجرت نصب: {inv['install']:,.0f}", right_x, y, size=9)
+        y -= 12
+    if inv['discount'] > 0:
+        draw_rtl_text(f"تخفیف: {inv['discount']:,.0f}", right_x, y, size=9)
+        y -= 12
+
+    c.setDash(2, 2)
+    c.line(15, y, page_width - 15, y)
+    c.setDash()
+    y -= 15
+
+    draw_rtl_text(f"جمع کل: {inv['total']:,.0f} تومان", right_x, y, font=bold_font, size=11)
+    y -= 25
+
+    draw_rtl_text(footer_text or "از اعتماد شما سپاسگزاریم", center_x, y, size=8, align="center")
+
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 # ==========================================
 # مدیریت وضعیت سیستم و لاگین
@@ -604,12 +676,22 @@ if choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
+        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
+        thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
+        
         if not has_font:
             st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد. راهنمای رفع در فایل README آمده است.")
-        st.download_button(label="📥 دانلود فاکتور PDF (آماده چاپ)", data=pdf_buffer,
-                            file_name=f"Invoice_{inv['c_phone'] or 'cash'}.pdf", mime="application/pdf",
-                            type="primary", use_container_width=True)
+        
+        c_btn1, c_btn2 = st.columns(2)
+        with c_btn1:
+            st.download_button(label="📥 دانلود فاکتور A5", data=pdf_buffer,
+                                file_name=f"Invoice_{inv['c_phone'] or 'cash'}_A5.pdf", mime="application/pdf",
+                                type="primary", use_container_width=True)
+        with c_btn2:
+            st.download_button(label="🧾 چاپ فیش حرارتی (8cm)", data=thermal_buffer,
+                                file_name=f"Invoice_{inv['c_phone'] or 'cash'}_Thermal.pdf", mime="application/pdf",
+                                type="primary", use_container_width=True)
 
         dis_text = f"\n🎁 تخفیف اعمال شده: {inv['discount']:,} تومان" if inv['discount'] > 0 else ""
         inv_text = (f"🧾 {shop_name}\nتاریخ: {inv['date']}\n👤 مشتری: {inv['c_name']}\n🚗 خودرو: {inv['c_car']}\n"
@@ -719,27 +801,51 @@ elif choice == "📦 مدیریت انبار":
         if all_products.empty:
             st.info("هنوز کالایی ثبت نشده است.")
         else:
-            label_map = {f"{r['name']} (موجودی فعلی: {r['stock']}) - {r['code']}": r['code'] for _, r in all_products.iterrows()}
-            picked = st.selectbox("انتخاب کالا:", list(label_map.keys()))
-            picked_code = label_map[picked]
-            current_stock = int(all_products[all_products['code'] == picked_code]['stock'].iloc[0])
+            adj_method = st.radio("روش انتخاب کالا:", ("جستجو در لیست (متنی)", "اسکنر دوربین"), horizontal=True)
+            picked_code = ""
 
-            adj_type = st.radio("نوع اصلاح:", ["➕ افزایش موجودی", "➖ کاهش موجودی"], horizontal=True)
-            adj_qty = st.number_input("تعداد", min_value=1, step=1)
-            adj_reason = st.text_input("دلیل اصلاح (مثال: کالای آسیب‌دیده، انبارگردانی)")
-
-            if st.button("✅ ثبت اصلاح موجودی", type="primary"):
-                signed = adj_qty if adj_type.startswith("➕") else -adj_qty
-                if current_stock + signed < 0:
-                    st.error(f"موجودی کافی برای کاهش {adj_qty} عدد وجود ندارد (موجودی فعلی: {current_stock}).")
+            if adj_method == "جستجو در لیست (متنی)":
+                label_map = {f"{r['name']} (موجودی فعلی: {r['stock']}) - {r['code']}": r['code'] for _, r in all_products.iterrows()}
+                picked = st.selectbox("انتخاب کالا:", list(label_map.keys()))
+                if picked:
+                    picked_code = label_map[picked]
+            elif adj_method == "اسکنر دوربین":
+                if HAS_SCANNER_PKG:
+                    scanned_adj = qrcode_scanner(key='adj_scanner')
+                    if scanned_adj:
+                        picked_code = scanned_adj
                 else:
-                    with engine.begin() as conn:
-                        conn.execute(text("UPDATE products SET stock = stock + :s WHERE code=:c"), {"s": signed, "c": picked_code})
-                        conn.execute(text("""INSERT INTO stock_adjustments (product_code, change_qty, reason, staff_name, timestamp)
-                                              VALUES (:c, :q, :r, :sn, :ts)"""),
-                                     {"c": picked_code, "q": signed, "r": adj_reason, "sn": st.session_state.user_name, "ts": iran_naive()})
-                    st.success("موجودی اصلاح شد.")
-                    st.rerun()
+                    st.warning("پکیج اسکنر نصب نیست.")
+                    code_manual = st.text_input("بارکد را دستی وارد کنید:")
+                    if code_manual:
+                        picked_code = code_manual
+
+            if picked_code:
+                current_prod = all_products[all_products['code'] == picked_code]
+                if current_prod.empty:
+                    st.error("کالایی با این کد یافت نشد.")
+                else:
+                    current_stock = int(current_prod['stock'].iloc[0])
+                    prod_name = current_prod['name'].iloc[0]
+
+                    st.markdown(f"**📦 کالای انتخاب‌شده:** {prod_name} | **موجودی فعلی:** {current_stock}")
+
+                    adj_type = st.radio("نوع اصلاح:", ["➕ افزایش موجودی", "➖ کاهش موجودی"], horizontal=True)
+                    adj_qty = st.number_input("تعداد", min_value=1, step=1)
+                    adj_reason = st.text_input("دلیل اصلاح (مثال: کالای آسیب‌دیده، انبارگردانی)")
+
+                    if st.button("✅ ثبت اصلاح موجودی", type="primary"):
+                        signed = adj_qty if adj_type.startswith("➕") else -adj_qty
+                        if current_stock + signed < 0:
+                            st.error(f"موجودی کافی برای کاهش {adj_qty} عدد وجود ندارد (موجودی فعلی: {current_stock}).")
+                        else:
+                            with engine.begin() as conn:
+                                conn.execute(text("UPDATE products SET stock = stock + :s WHERE code=:c"), {"s": signed, "c": picked_code})
+                                conn.execute(text("""INSERT INTO stock_adjustments (product_code, change_qty, reason, staff_name, timestamp)
+                                                      VALUES (:c, :q, :r, :sn, :ts)"""),
+                                             {"c": picked_code, "q": signed, "r": adj_reason, "sn": st.session_state.user_name, "ts": iran_naive()})
+                            st.success("موجودی اصلاح شد.")
+                            st.rerun()
 
             recent_adj = pd.read_sql_query("""SELECT product_code as 'کد', change_qty as 'تغییر', reason as 'دلیل',
                                                       staff_name as 'ثبت‌کننده', timestamp as 'زمان'
@@ -905,14 +1011,18 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     else:
         start_dt = iran_now - timedelta(days=3650)  # ده سال یعنی «همه زمان‌ها»
 
-    sales_df = pd.read_sql_query("SELECT * FROM sales", engine)
-    exp_df = pd.read_sql_query("SELECT * FROM expenses", engine)
+    # فیلتر مستقیم روی دیتابیس انجام می‌شود تا روی رم سیستم مغازه فشار نیاید
+    sales_query = text("SELECT * FROM sales WHERE timestamp >= :s AND timestamp <= :e")
+    sales_df = pd.read_sql_query(sales_query, engine, params={"s": start_dt, "e": end_dt})
+    
+    exp_query = text("SELECT * FROM expenses WHERE timestamp >= :s AND timestamp <= :e")
+    exp_df = pd.read_sql_query(exp_query, engine, params={"s": start_dt, "e": end_dt})
 
     if not sales_df.empty:
         sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'])
         if sales_df['timestamp'].dt.tz is not None:
             sales_df['timestamp'] = sales_df['timestamp'].dt.tz_convert(None)
-        sales_df = sales_df[(sales_df['timestamp'] >= start_dt) & (sales_df['timestamp'] <= end_dt)]
+        
         for col in ['discount', 'install_fee', 'staff_commission', 'net_profit']:
             sales_df[col] = sales_df[col].fillna(0)
         sales_df['درآمد نهایی'] = (sales_df['quantity'] * sales_df['sale_price']) + sales_df['install_fee'] - sales_df['discount']
@@ -921,7 +1031,7 @@ elif choice == "📊 گزارش‌ها و داشبورد":
         exp_df['timestamp'] = pd.to_datetime(exp_df['timestamp'])
         if exp_df['timestamp'].dt.tz is not None:
             exp_df['timestamp'] = exp_df['timestamp'].dt.tz_convert(None)
-        exp_df = exp_df[(exp_df['timestamp'] >= start_dt) & (exp_df['timestamp'] <= end_dt)]
+        
         if 'category' not in exp_df.columns:
             exp_df['category'] = 'سایر'
         exp_df['category'] = exp_df['category'].fillna('سایر')
