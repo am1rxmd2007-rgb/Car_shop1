@@ -420,6 +420,22 @@ if st.session_state.user_role is None:
 
 st.sidebar.success(f"👤 کاربر فعال: {st.session_state.user_name}")
 
+if st.session_state.user_role == "Staff":
+    with st.sidebar.expander("🔑 تغییر رمز عبور من"):
+        old_pw = st.text_input("رمز فعلی", type="password", key="old_pw_change")
+        new_pw = st.text_input("رمز جدید (حداقل ۴ حرف)", type="password", key="new_pw_change")
+        if st.button("ثبت رمز جدید"):
+            if len(new_pw) < 4:
+                st.error("رمز جدید باید حداقل ۴ حرف باشد.")
+            else:
+                with engine.begin() as conn:
+                    curr = conn.execute(text("SELECT password FROM staff WHERE name=:n"), {"n": st.session_state.user_name}).fetchone()
+                    if curr and curr[0] == hash_password(old_pw):
+                        conn.execute(text("UPDATE staff SET password=:p WHERE name=:n"), {"p": hash_password(new_pw), "n": st.session_state.user_name})
+                        st.success("رمز با موفقیت تغییر کرد!")
+                    else:
+                        st.error("رمز فعلی اشتباه است.")
+
 if st.sidebar.button("خروج از سیستم"):
     st.session_state.user_role = None
     st.session_state.user_name = None
@@ -517,7 +533,9 @@ if choice == "🛒 ثبت فروش / خدمات":
 
                     cc1, cc2 = st.columns(2)
                     with cc1: c_name = st.text_input("نام مشتری", key="name_s")
-                    with cc2: c_phone = st.text_input("موبایل", key="phone_s")
+                    with cc2:
+                        c_phone = st.text_input("موبایل", key="phone_s")
+                        mobile_hint(c_phone)
 
                     car_opt = st.selectbox("مدل ماشین", CAR_MODELS + ["سایر (تایپ دستی)"])
                     c_car = st.text_input("لطفاً نام خودرو را وارد کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
@@ -577,7 +595,9 @@ if choice == "🛒 ثبت فروش / خدمات":
 
         sc1, sc2 = st.columns(2)
         with sc1: s_cname = st.text_input("نام مشتری", key="name_srv_s")
-        with sc2: s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
+        with sc2:
+            s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
+            mobile_hint(s_cphone)
 
         car_opt_srv = st.selectbox("مدل خودرو", CAR_MODELS + ["سایر (تایپ دستی)"], key="car_srv_opt")
         s_ccar = st.text_input("لطفاً نام خودرو را وارد کنید:", key="car_srv_txt") if car_opt_srv == "سایر (تایپ دستی)" else car_opt_srv
@@ -614,8 +634,8 @@ if choice == "🛒 ثبت فروش / خدمات":
 
     with tab_refund:
         if st.session_state.user_role == "Admin":
-            st.markdown("ابتدا کالای مرجوعی را پیدا کنید:")
-            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method")
+            st.markdown("🔍 **ابتدا کالای مرجوعی را پیدا کنید:**")
+            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method", horizontal=True)
             ref_code = ""
 
             if ref_method == "کیبورد / بارکدخوان فیزیکی":
@@ -627,7 +647,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                 else:
                     st.warning("پکیج اسکنر نصب نیست.")
             elif ref_method == "جستجوی نام کالا":
-                ref_q = st.text_input("نام کالا:", key="ref_name")
+                ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:", key="ref_name")
                 if ref_q:
                     ref_df = pd.read_sql_query(
                         text("SELECT code, name FROM products WHERE name LIKE :q"),
@@ -638,19 +658,21 @@ if choice == "🛒 ثبت فروش / خدمات":
                         picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="ref_sel")
                         if picked_label:
                             ref_code = label_map[picked_label]
+                    else:
+                        st.info("کالایی یافت نشد.")
             
             if ref_code:
                 st.markdown("---")
-                st.markdown("**فاکتورهای اخیر ثبت‌شده برای این کالا:**")
+                st.markdown("**🧾 فاکتورهای صادر شده برای این کالا:**")
                 sales_of_product = pd.read_sql_query(
                     text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 20"),
                     engine, params={"c": ref_code}
                 )
                 if not sales_of_product.empty:
-                    st.dataframe(sales_of_product.rename(columns={'id': 'کد', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
+                    st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
                     
-                    refund_id = st.number_input("کد ردیف فاکتور (کد) جهت ابطال را وارد کنید:", min_value=0, step=1)
-                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت به انبار")
+                    refund_id = st.number_input("کد فاکتور جهت ابطال را وارد کنید:", min_value=0, step=1)
+                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار")
 
                     if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
                         with engine.begin() as conn:
@@ -661,9 +683,9 @@ if choice == "🛒 ثبت فروش / خدمات":
                                 st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
                                 st.rerun()
                             else:
-                                st.error("فاکتوری با این کد برای کالای انتخابی یافت نشد.")
+                                st.error("کد فاکتور اشتباه است یا متعلق به این کالا نیست.")
                 else:
-                    st.info("فاکتوری برای این کالا یافت نشد.")
+                    st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
         else:
             st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
@@ -677,8 +699,12 @@ if choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
+        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
+        
+        if not has_font:
+            st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد. راهنمای رفع در فایل README آمده است.")
         
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
@@ -1019,27 +1045,29 @@ elif choice == "📊 گزارش‌ها و داشبورد":
 
     sales_df = pd.read_sql_query("SELECT * FROM sales", engine)
     exp_df = pd.read_sql_query("SELECT * FROM expenses", engine)
+    
+    start_ts = pd.Timestamp(start_dt)
+    end_ts = pd.Timestamp(end_dt)
 
     if not sales_df.empty:
-        sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'], errors='coerce')
-        if sales_df['timestamp'].dt.tz is not None:
-            sales_df['timestamp'] = sales_df['timestamp'].dt.tz_convert(None)
-            
-        sales_df = sales_df[(sales_df['timestamp'] >= start_dt) & (sales_df['timestamp'] <= end_dt)]
+        # حذف هرگونه پسوند منطقه زمانی دیتابیس (Timezone) با جدا کردن دقیق بخش تاریخ و زمان
+        sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp'].astype(str).str.slice(0, 19), errors='coerce')
+        sales_df = sales_df[(sales_df['timestamp'] >= start_ts) & (sales_df['timestamp'] <= end_ts)]
         
+    if not sales_df.empty:
         for col in ['discount', 'install_fee', 'staff_commission', 'net_profit']:
-            sales_df[col] = sales_df[col].fillna(0)
+            sales_df[col] = pd.to_numeric(sales_df[col], errors='coerce').fillna(0)
         sales_df['درآمد نهایی'] = (sales_df['quantity'] * sales_df['sale_price']) + sales_df['install_fee'] - sales_df['discount']
 
     if not exp_df.empty:
-        exp_df['timestamp'] = pd.to_datetime(exp_df['timestamp'], errors='coerce')
-        if exp_df['timestamp'].dt.tz is not None:
-            exp_df['timestamp'] = exp_df['timestamp'].dt.tz_convert(None)
-            
-        exp_df = exp_df[(exp_df['timestamp'] >= start_dt) & (exp_df['timestamp'] <= end_dt)]
+        exp_df['timestamp'] = pd.to_datetime(exp_df['timestamp'].astype(str).str.slice(0, 19), errors='coerce')
+        exp_df = exp_df[(exp_df['timestamp'] >= start_ts) & (exp_df['timestamp'] <= end_ts)]
+        
+    if not exp_df.empty:
         if 'category' not in exp_df.columns:
             exp_df['category'] = 'سایر'
         exp_df['category'] = exp_df['category'].fillna('سایر')
+        exp_df['amount'] = pd.to_numeric(exp_df['amount'], errors='coerce').fillna(0)
 
     t_rep, t_chart, t_exp, t_staff = st.tabs(["📋 فروش", "📈 نمودار و پرفروش‌ترین‌ها", "💸 خرج‌کرد", "👥 پرسنل"])
 
