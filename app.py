@@ -264,13 +264,8 @@ if choice == "🛒 ثبت فروش / خدمات":
     conn.close()
     
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist() if not staff_df_list.empty else ["ادمین (بدون پورسانت)"]
-    
     if not vip_df.empty:
         vip_df.fillna('', inplace=True)
-        vip_df['display'] = vip_df.apply(lambda row: f"{row['customer_phone']} - {row['customer_name']}".strip(" -"), axis=1)
-        vip_options = ["👤 مشتری جدید (وارد کردن دستی)"] + vip_df['display'].drop_duplicates().tolist()
-    else:
-        vip_options = ["👤 مشتری جدید (وارد کردن دستی)"]
 
     tab_sale, tab_service, tab_refund = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات (بدون کالا)", "🔄 مرجوعی کالا"])
     
@@ -331,21 +326,21 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
-                    # 🌟 راه حل قطعی برای موبایل: جستجو با تایپ مستقیم + لیست کشویی
+                    # 🌟 ارتقای قطعی برای موبایل: جستجوی متنی خالص (بدون منوی انتخابی)
                     st.markdown("---")
                     st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
-                    vip_search_q = st.text_input("⌨️ بخشی از شماره موبایل یا نام مشتری قدیمی را تایپ کنید:", key="vip_search_sale")
+                    vip_search_q = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_sale")
                     
-                    # فیلتر کردن هوشمند لیست بر اساس متن تایپ شده
-                    filtered_vips = [v for v in vip_options if v == "👤 مشتری جدید (وارد کردن دستی)" or vip_search_q in v] if vip_search_q else vip_options
-                    
-                    selected_vip = st.selectbox("👇 مشتری را از لیست زیر انتخاب کنید:", filtered_vips, key="vip_sale")
-                    
-                    if selected_vip != "👤 مشتری جدید (وارد کردن دستی)":
-                        c_info = vip_df[vip_df['display'] == selected_vip].iloc[0]
-                        c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
-                    else:
-                        c_name_val, c_phone_val, c_car_val = "", "", ""
+                    c_name_val, c_phone_val, c_car_val = "", "", ""
+                    if vip_search_q and not vip_df.empty:
+                        match = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q, case=False, na=False)) | 
+                                       (vip_df['customer_name'].astype(str).str.contains(vip_search_q, case=False, na=False))]
+                        if not match.empty:
+                            c_info = match.iloc[0]
+                            c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
+                            st.success(f"✅ مشتری پیدا شد: {c_name_val} - {c_phone_val}")
+                        else:
+                            st.warning("⚠️ مشتری با این مشخصات در سیستم یافت نشد.")
 
                     cc1, cc2 = st.columns(2)
                     with cc1: c_name = st.text_input("نام مشتری (اختیاری)", value=c_name_val, key="name_s")
@@ -398,20 +393,21 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
-        # 🌟 راه حل قطعی برای موبایل در بخش خدمات
+        # 🌟 ارتقای جستجوی متنی خالص برای بخش خدمات
         st.markdown("---")
         st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
-        vip_search_q_srv = st.text_input("⌨️ بخشی از شماره موبایل یا نام مشتری قدیمی را تایپ کنید:", key="vip_search_srv")
+        vip_search_q_srv = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_srv")
         
-        filtered_vips_srv = [v for v in vip_options if v == "👤 مشتری جدید (وارد کردن دستی)" or vip_search_q_srv in v] if vip_search_q_srv else vip_options
-        
-        selected_vip_srv = st.selectbox("👇 مشتری را از لیست زیر انتخاب کنید:", filtered_vips_srv, key="vip_srv")
-        
-        if selected_vip_srv != "👤 مشتری جدید (وارد کردن دستی)":
-            c_info_srv = vip_df[vip_df['display'] == selected_vip_srv].iloc[0]
-            cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
-        else:
-            cs_name_val, cs_phone_val, cs_car_val = "", "", ""
+        cs_name_val, cs_phone_val, cs_car_val = "", "", ""
+        if vip_search_q_srv and not vip_df.empty:
+            match_srv = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q_srv, case=False, na=False)) | 
+                               (vip_df['customer_name'].astype(str).str.contains(vip_search_q_srv, case=False, na=False))]
+            if not match_srv.empty:
+                c_info_srv = match_srv.iloc[0]
+                cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
+                st.success(f"✅ مشتری پیدا شد: {cs_name_val} - {cs_phone_val}")
+            else:
+                st.warning("⚠️ مشتری با این مشخصات در سیستم یافت نشد.")
 
         sc1, sc2 = st.columns(2)
         with sc1: s_cname = st.text_input("نام مشتری", value=cs_name_val, key="cname_srv_input")
