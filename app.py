@@ -314,9 +314,13 @@ if choice == "🛒 ثبت فروش / خدمات":
                     st.markdown(f"**قیمت فروش:** {product[4]:,.0f} تومان | **موجودی:** {product[5]} عدد")
                     
                     f_qty = st.number_input("تعداد", min_value=1, max_value=product[5] if product[5]>0 else 1)
+                    
                     f_install = st.number_input("اجرت نصب (تومان)", min_value=0, step=10000, value=0)
+                    if f_install >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {f_install:,.0f} تومان</div>", unsafe_allow_html=True)
+                    
                     max_discount = int((product[4] * f_qty) + f_install)
                     f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, max_value=max_discount, step=10000, value=0)
+                    if f_discount >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#d32f2f; font-weight:bold; font-size: 14px;'>🎁 معادل تخفیف: {f_discount:,.0f} تومان</div>", unsafe_allow_html=True)
                     
                     s_staff = st.selectbox("👷‍♂️ ثبت به نام:", staff_options) if st.session_state.user_role == "Admin" else st.session_state.user_name
                     
@@ -337,7 +341,9 @@ if choice == "🛒 ثبت فروش / خدمات":
                     cc1, cc2 = st.columns(2)
                     with cc1: c_name = st.text_input("نام مشتری", key="name_s")
                     with cc2: c_phone = st.text_input("موبایل", key="phone_s")
-                    c_car = st.selectbox("مدل ماشین", CAR_MODELS, key="car_s")
+                    
+                    car_opt = st.selectbox("مدل ماشین", CAR_MODELS + ["سایر (تایپ دستی)"])
+                    c_car = st.text_input("لطفاً نام خودرو را وارد کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
 
                     if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
                         now_dt = get_iran_time()
@@ -371,13 +377,18 @@ if choice == "🛒 ثبت فروش / خدمات":
 
     with tab_service:
         s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
+        
         s_fee = st.number_input("مبلغ اجرت (تومان)", min_value=0, step=50000)
+        if s_fee >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {s_fee:,.0f} تومان</div>", unsafe_allow_html=True)
+            
         s_staff_srv = st.selectbox("👷‍♂️ ثبت به نام نصاب:", staff_options, key="staff_srv") if st.session_state.user_role == "Admin" else st.session_state.user_name
         
         sc1, sc2 = st.columns(2)
         with sc1: s_cname = st.text_input("نام مشتری", key="name_srv_s")
         with sc2: s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
-        s_ccar = st.selectbox("مدل خودرو", CAR_MODELS, key="car_srv_s")
+        
+        car_opt_srv = st.selectbox("مدل خودرو", CAR_MODELS + ["سایر (تایپ دستی)"], key="car_srv_opt")
+        s_ccar = st.text_input("لطفاً نام خودرو را وارد کنید:", key="car_srv_txt") if car_opt_srv == "سایر (تایپ دستی)" else car_opt_srv
         
         if st.button("🔧 ثبت خدمات", use_container_width=True):
             if s_name and s_fee > 0:
@@ -479,13 +490,31 @@ elif choice == "➕ افزودن کالا":
     tab_manual, tab_bulk = st.tabs(["➕ ثبت تکی", "📂 ورود گروهی با اکسل"])
     
     with tab_manual:
-        code = st.text_input("کد کالا (خالی = خودکار):")
+        a_mode = st.radio("روش ورود کد:", ("دستی / تولید خودکار", "اسکن دوربین"))
+        
+        if a_mode == "اسکن دوربین" and HAS_SCANNER_PKG:
+            scanned = qrcode_scanner(key='new_scan')
+            if scanned: st.session_state.scanned_add_code = scanned
+                
+        val = st.session_state.scanned_add_code if a_mode == "اسکن دوربین" else ""
+        code = st.text_input("کد کالا/بارکد (خالی بگذارید تا خودکار ساخته شود):", value=val)
+        
         name = st.text_input("نام کالا:")
-        cat = st.selectbox("دسته‌بندی:", CATEGORIES)
-        car = st.selectbox("مناسب برای خودرو:", CAR_MODELS)
+        
+        cat_opt = st.selectbox("دسته‌بندی:", CATEGORIES + ["سایر (تایپ دستی)"])
+        cat = st.text_input("لطفاً دسته‌بندی جدید را تایپ کنید:") if cat_opt == "سایر (تایپ دستی)" else cat_opt
+        
+        car_opt = st.selectbox("مناسب برای خودرو:", CAR_MODELS + ["سایر (تایپ دستی)"])
+        car = st.text_input("لطفاً نام خودروی جدید را تایپ کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
+        
         c1, c2 = st.columns(2)
-        with c1: pb = st.number_input("قیمت خرید", step=10000)
-        with c2: ps = st.number_input("قیمت فروش", step=10000)
+        with c1: 
+            pb = st.number_input("قیمت خرید", step=10000)
+            if pb >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {pb:,.0f} تومان</div>", unsafe_allow_html=True)
+        with c2: 
+            ps = st.number_input("قیمت فروش", step=10000)
+            if ps >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ps:,.0f} تومان</div>", unsafe_allow_html=True)
+            
         stock = st.number_input("موجودی", min_value=0)
         
         if st.button("ثبت کالا", type="primary"):
@@ -495,6 +524,7 @@ elif choice == "➕ افزودن کالا":
                     with engine.begin() as conn:
                         conn.execute(text("INSERT INTO products VALUES (:c, :n, :cat, :pb, :ps, :st, :car)"), 
                                      {"c": fc, "n": name, "cat": cat, "pb": pb, "ps": ps, "st": stock, "car": car})
+                    st.session_state.scanned_add_code = ""
                     st.success("کالا ثبت شد!")
                 except Exception: st.error("کد تکراری است!")
             else: st.error("نام کالا الزامی است.")
@@ -587,6 +617,9 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     with t_exp:
         ex_t = st.text_input("شرح هزینه")
         ex_a = st.number_input("مبلغ (تومان)", step=50000)
+        
+        if ex_a >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {ex_a:,.0f} تومان</div>", unsafe_allow_html=True)
+            
         if st.button("ثبت خرج‌کرد") and ex_t and ex_a > 0:
             with engine.begin() as conn:
                 conn.execute(text("INSERT INTO expenses (title, amount, exp_date, timestamp) VALUES (:t, :a, :d, :ts)"), 
@@ -611,6 +644,7 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
         with c1: 
             name = st.text_input(p_label, key=f"n_{l_type}")
             amt = st.number_input("مبلغ", step=100000, key=f"a_{l_type}")
+            if amt >= 0: st.markdown(f"<div style='margin-top:-15px; margin-bottom:10px; color:#2e7d32; font-weight:bold; font-size: 14px;'>💳 معادل: {amt:,.0f} تومان</div>", unsafe_allow_html=True)
         with c2:
             date = st.text_input("سررسید (مثال: 1403/06/10)", key=f"d_{l_type}")
             desc = st.text_input("بابت", key=f"ds_{l_type}")
@@ -635,7 +669,7 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
 # ==========================================
 # 5. مدیریت پرسنل
 # ==========================================
-elif choice == "👥 مدیریت پرسنل (شاگردان)":
+elif choice == "👥 مدیریت پرسنل":
     st.header("👥 مدیریت شاگردان")
     c1, c2, c3 = st.columns(3)
     with c1: new_n = st.text_input("نام شاگرد")
