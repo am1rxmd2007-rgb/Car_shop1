@@ -260,11 +260,19 @@ if choice == "🛒 ثبت فروش / خدمات":
     
     conn = sqlite3.connect(DB_NAME)
     staff_df_list = pd.read_sql_query("SELECT name FROM staff", conn)
-    vip_df = pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != ''", conn)
+    # دریافت لیست مشتریان (هم شماره هم نام)
+    vip_df = pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != '' OR customer_phone != ''", conn)
     conn.close()
     
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist() if not staff_df_list.empty else ["ادمین (بدون پورسانت)"]
-    vip_options = ["👤 مشتری جدید (وارد کردن دستی)"] + vip_df['customer_name'].drop_duplicates().tolist() if not vip_df.empty else ["👤 مشتری جدید (وارد کردن دستی)"]
+    
+    # ساخت لیست هوشمند اتوکامپلیت با ترکیب شماره و نام
+    if not vip_df.empty:
+        vip_df.fillna('', inplace=True)
+        vip_df['display'] = vip_df.apply(lambda row: f"{row['customer_phone']} - {row['customer_name']}".strip(" -"), axis=1)
+        vip_options = ["👤 مشتری جدید (وارد کردن دستی)"] + vip_df['display'].drop_duplicates().tolist()
+    else:
+        vip_options = ["👤 مشتری جدید (وارد کردن دستی)"]
 
     tab_sale, tab_service, tab_refund = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات (بدون کالا)", "🔄 مرجوعی کالا"])
     
@@ -325,10 +333,10 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
-                    # اتوکامپلیت مشتریان
-                    selected_vip = st.selectbox("🔍 جستجوی مشتریان قدیمی (تکمیل خودکار):", vip_options, key="vip_sale")
+                    # منوی جستجوی زنده (Live Search) با کیبورد
+                    selected_vip = st.selectbox("🔍 کلیک کنید و نام یا شماره موبایل مشتری را تایپ کنید (جستجوی خودکار):", vip_options, key="vip_sale")
                     if selected_vip != "👤 مشتری جدید (وارد کردن دستی)":
-                        c_info = vip_df[vip_df['customer_name'] == selected_vip].iloc[0]
+                        c_info = vip_df[vip_df['display'] == selected_vip].iloc[0]
                         c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
                     else:
                         c_name_val, c_phone_val, c_car_val = "", "", ""
@@ -384,9 +392,9 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
-        selected_vip_srv = st.selectbox("🔍 جستجوی مشتریان قدیمی (تکمیل خودکار):", vip_options, key="vip_srv")
+        selected_vip_srv = st.selectbox("🔍 کلیک کنید و نام یا شماره موبایل مشتری را تایپ کنید (جستجوی خودکار):", vip_options, key="vip_srv")
         if selected_vip_srv != "👤 مشتری جدید (وارد کردن دستی)":
-            c_info_srv = vip_df[vip_df['customer_name'] == selected_vip_srv].iloc[0]
+            c_info_srv = vip_df[vip_df['display'] == selected_vip_srv].iloc[0]
             cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
         else:
             cs_name_val, cs_phone_val, cs_car_val = "", "", ""
@@ -512,7 +520,6 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
     
     if st.session_state.user_role == "Admin":
         st.markdown("---")
-        # هشدار نقطه سفارش و تولید لیست خرید (Reorder Point)
         out_df = df[df['موجودی'] < 3]
         if not out_df.empty:
             st.error(f"⚠️ تعداد {len(out_df)} کالا موجودی صفر یا رو به اتمام (زیر ۳ عدد) دارند:")
@@ -778,7 +785,6 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             else:
                 st.success("تا کنون هیچ تخفیفی روی فاکتورها ثبت نشده است.")
 
-    # سیستم ارسال گزارش به تلگرام
     st.markdown("---")
     st.subheader("📤 ارسال گزارش مالی به تلگرام")
     tg_token, tg_chat_id = get_telegram_secrets()
