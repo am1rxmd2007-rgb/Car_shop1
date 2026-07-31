@@ -115,6 +115,10 @@ def show_toman_hint(amount, color="#2e7d32", label="معادل"):
         f"💳 {label}: {amount:,.0f} تومان</div>", unsafe_allow_html=True
     )
 
+def mobile_hint(phone):
+    if phone and not (phone.isdigit() and len(phone) == 11 and phone.startswith("09")):
+        st.caption("⚠️ فرمت معمول موبایل ایران: ۱۱ رقم و شروع با 09 (اختیاری، مانع ثبت نمی‌شود)")
+
 # ==========================================
 # دیتابیس
 # ==========================================
@@ -565,7 +569,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                                     VALUES (:pc, :n, :q, :sp, :sd, :ts, :cn, :cp, :cm, :i, :np, :sn, :sc, :d)
                                 """), {
                                     "pc": code_input, "n": product['name'], "q": f_qty, "sp": product['sale_price'], "sd": now_str,
-                                    "ts": now_dt, "cn": c_name, "cp": c_phone, "cm": c_car,
+                                    "ts": str(now_dt), "cn": c_name, "cp": c_phone, "cm": c_car,
                                     "i": f_install, "np": net_prof, "sn": s_staff,
                                     "sc": float(net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": f_discount
                                 })
@@ -617,7 +621,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                         conn.execute(text("""
                             INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
                             VALUES ('SERVICE', :n, 0, 0, :sd, :ts, :cn, :cp, :cm, :i, :i, :sn, :sc, 0)
-                        """), {"n": s_name.strip(), "sd": now_str, "ts": now_dt, "cn": s_cname, "cp": s_cphone, "cm": s_ccar,
+                        """), {"n": s_name.strip(), "sd": now_str, "ts": str(now_dt), "cn": s_cname, "cp": s_cphone, "cm": s_ccar,
                                "i": s_fee, "sn": s_staff_srv, "sc": s_fee * (staff_rate / 100.0)})
 
                     st.session_state.last_invoice = {
@@ -702,9 +706,6 @@ if choice == "🛒 ثبت فروش / خدمات":
         # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
-        
-        if not has_font:
-            st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد. راهنمای رفع در فایل README آمده است.")
         
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
@@ -882,7 +883,7 @@ elif choice == "📦 مدیریت انبار":
                                 conn.execute(text("UPDATE products SET stock = stock + :s WHERE code=:c"), {"s": signed, "c": picked_code})
                                 conn.execute(text("""INSERT INTO stock_adjustments (product_code, change_qty, reason, staff_name, timestamp)
                                                       VALUES (:c, :q, :r, :sn, :ts)"""),
-                                             {"c": picked_code, "q": signed, "r": adj_reason, "sn": st.session_state.user_name, "ts": iran_naive()})
+                                             {"c": picked_code, "q": signed, "r": adj_reason, "sn": st.session_state.user_name, "ts": str(iran_naive())})
                             st.success("موجودی اصلاح شد.")
                             st.rerun()
 
@@ -1112,7 +1113,7 @@ elif choice == "📊 گزارش‌ها و داشبورد":
         if st.button("ثبت خرج‌کرد") and ex_t and ex_a > 0:
             with engine.begin() as conn:
                 conn.execute(text("INSERT INTO expenses (title, amount, exp_date, timestamp, category) VALUES (:t, :a, :d, :ts, :cat)"),
-                             {"t": ex_t, "a": ex_a, "d": jalali_date_str(), "ts": iran_naive(), "cat": ex_cat})
+                             {"t": ex_t, "a": ex_a, "d": jalali_date_str(), "ts": str(iran_naive()), "cat": ex_cat})
             st.success("ثبت شد."); st.rerun()
 
         if not exp_df.empty:
@@ -1153,7 +1154,7 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
                 with engine.begin() as conn:
                     conn.execute(text("""INSERT INTO ledger (record_type, person_name, amount, due_date, description, status, timestamp)
                                           VALUES (:rt, :p, :a, :d, :ds, 'معلق', :ts)"""),
-                                 {"rt": l_type, "p": name, "a": amt, "d": date, "ds": desc, "ts": iran_naive()})
+                                 {"rt": l_type, "p": name, "a": amt, "d": date, "ds": desc, "ts": str(iran_naive())})
                 st.success("ثبت شد."); st.rerun()
             else:
                 st.error("نام و مبلغ الزامی است.")
@@ -1174,7 +1175,7 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
                 if st.button("✅ ثبت تسویه", key=f"settle_{l_type}") and sel_id > 0:
                     with engine.begin() as conn:
                         conn.execute(text("UPDATE ledger SET status='تسویه شده', settled_at=:ts WHERE id=:i"),
-                                     {"ts": iran_naive(), "i": sel_id})
+                                     {"ts": str(iran_naive()), "i": sel_id})
                     st.success("به‌عنوان تسویه‌شده ثبت شد."); st.rerun()
             with bcol2:
                 confirm_del = st.checkbox("تایید حذف کامل (غیرقابل بازگشت)", key=f"cd_{l_type}")
@@ -1201,7 +1202,7 @@ elif choice == "👥 مدیریت پرسنل":
             try:
                 with engine.begin() as conn:
                     conn.execute(text("INSERT INTO staff (name, password, commission_rate, timestamp, active) VALUES (:n, :p, :r, :ts, 1)"),
-                                 {"n": new_n.strip(), "p": hash_password(new_p), "r": new_r, "ts": iran_naive()})
+                                 {"n": new_n.strip(), "p": hash_password(new_p), "r": new_r, "ts": str(iran_naive())})
                 st.success("ثبت شد!")
                 st.rerun()
             except IntegrityError:
