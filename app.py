@@ -5,10 +5,12 @@ from datetime import datetime, timedelta
 import jdatetime
 import pytz
 import urllib.parse
+import urllib.request
 import os
 import io
 import hashlib
 import html
+import json
 
 # ایمپورت اسکنر حرفه‌ای
 try:
@@ -22,7 +24,6 @@ except ImportError:
 # ==========================================
 st.set_page_config(page_title="سیستم یکپارچه فروشگاه اسپرت", page_icon="🚗", layout="wide")
 
-# شخصی‌سازی ظاهر و حفظ منوی موبایل
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -47,22 +48,31 @@ def convert_df_to_excel(df):
     return output.getvalue()
 
 def get_admin_password():
-    # رمز ادمین رو از Secrets می‌خونه. اگه هنوز secrets.toml تنظیم نشده باشه
-    # (مثلاً همون اجرای اول روی سیستم شما) به یه رمز پیش‌فرض برمی‌گرده تا
-    # سایت خطا نده - ولی قبل از دیپلوی واقعی حتماً تو .streamlit/secrets.toml
-    # (که تو گیت‌هاب commit نمیشه) یه رمز جدید بذار.
     try:
         return st.secrets["admin_password"]
     except Exception:
         return "2613"
 
+def get_telegram_secrets():
+    try:
+        return st.secrets.get("telegram_token", ""), st.secrets.get("telegram_chat_id", "")
+    except Exception:
+        return "", ""
+
+def send_telegram_msg(token, chat_id, text):
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urllib.parse.urlencode({'chat_id': chat_id, 'text': text}).encode('utf-8')
+    try:
+        req = urllib.request.Request(url, data=data)
+        urllib.request.urlopen(req, timeout=5)
+        return True
+    except:
+        return False
+
 def hash_password(raw_password):
     return hashlib.sha256(str(raw_password).encode("utf-8")).hexdigest()
 
 def verify_staff_password(input_password, stored_password):
-    # اول با رمز هش‌شده مقایسه می‌کنه. اگه رمز قدیمی هنوز به‌صورت متن ساده
-    # ذخیره شده باشه (رمزهای قبل از این آپدیت)، با تطابق مستقیم قبولش می‌کنه
-    # و امضای needs_upgrade=True برمی‌گردونه تا خودکار هش بشه.
     if stored_password == hash_password(input_password):
         return True, False
     if stored_password == input_password:
@@ -199,7 +209,6 @@ if st.sidebar.button("خروج از سیستم"):
     st.session_state.user_name = None
     st.rerun()
 
-# تنظیم منوها
 st.sidebar.markdown("---")
 if st.session_state.user_role == "Admin":
     menu = ["🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد", "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل (شاگردان)"]
@@ -208,7 +217,6 @@ else:
 
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
-# ابزارهای فقط ادمین در سایدبار
 if st.session_state.user_role == "Admin":
     st.sidebar.markdown("---")
     if os.path.exists(DB_NAME):
@@ -245,17 +253,20 @@ if st.session_state.user_role == "Admin":
                 st.sidebar.info(f"{l_type} {row['person_name']}\nمبلغ: {row['amount']:,.0f} T\nسررسید: {due_date_str}")
 
 # ==========================================
-# بخش 1: ثبت فروش و خدمات
+# بخش 1: ثبت فروش، خدمات و مرجوعی
 # ==========================================
 if choice == "🛒 ثبت فروش / خدمات":
     st.header("🛒 ثبت فاکتور مشتری")
     
     conn = sqlite3.connect(DB_NAME)
     staff_df_list = pd.read_sql_query("SELECT name FROM staff", conn)
+    vip_df = pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != ''", conn)
     conn.close()
+    
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist() if not staff_df_list.empty else ["ادمین (بدون پورسانت)"]
+    vip_options = ["👤 مشتری جدید (وارد کردن دستی)"] + vip_df['customer_name'].drop_duplicates().tolist() if not vip_df.empty else ["👤 مشتری جدید (وارد کردن دستی)"]
 
-    tab_sale, tab_service = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات و تعمیرات (بدون کالا)"])
+    tab_sale, tab_service, tab_refund = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات (بدون کالا)", "🔄 مرجوعی کالا"])
     
     with tab_sale:
         col1, col2 = st.columns([1, 2])
@@ -314,10 +325,18 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
+                    # اتوکامپلیت مشتریان
+                    selected_vip = st.selectbox("🔍 جستجوی مشتریان قدیمی (تکمیل خودکار):", vip_options, key="vip_sale")
+                    if selected_vip != "👤 مشتری جدید (وارد کردن دستی)":
+                        c_info = vip_df[vip_df['customer_name'] == selected_vip].iloc[0]
+                        c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
+                    else:
+                        c_name_val, c_phone_val, c_car_val = "", "", ""
+
                     cc1, cc2 = st.columns(2)
-                    with cc1: c_name = st.text_input("نام مشتری (اختیاری)")
-                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)")
-                    c_car = st.text_input("مدل ماشین")
+                    with cc1: c_name = st.text_input("نام مشتری (اختیاری)", value=c_name_val, key="name_s")
+                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)", value=c_phone_val, key="phone_s")
+                    c_car = st.text_input("مدل ماشین", value=c_car_val, key="car_s")
 
                     if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
                         now_dt = get_iran_time()
@@ -328,8 +347,6 @@ if choice == "🛒 ثبت فروش / خدمات":
 
                         conn = sqlite3.connect(DB_NAME)
                         c = conn.cursor()
-                        # کاهش اتمی موجودی: فقط وقتی انجام میشه که هنوز موجودی کافی باشه.
-                        # این از فروش هم‌زمان بیشتر از موجودی واقعی (توسط دو نفر با هم) جلوگیری می‌کنه.
                         c.execute("UPDATE products SET stock = stock - ? WHERE code = ? AND stock >= ?", (f_qty, code_input, f_qty))
                         if c.rowcount == 0:
                             conn.close()
@@ -367,10 +384,17 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
+        selected_vip_srv = st.selectbox("🔍 جستجوی مشتریان قدیمی (تکمیل خودکار):", vip_options, key="vip_srv")
+        if selected_vip_srv != "👤 مشتری جدید (وارد کردن دستی)":
+            c_info_srv = vip_df[vip_df['customer_name'] == selected_vip_srv].iloc[0]
+            cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
+        else:
+            cs_name_val, cs_phone_val, cs_car_val = "", "", ""
+
         sc1, sc2 = st.columns(2)
-        with sc1: s_cname = st.text_input("نام مشتری", key="cname_srv")
-        with sc2: s_cphone = st.text_input("شماره موبایل", key="cphone_srv")
-        s_ccar = st.text_input("مدل خودرو", key="ccar_srv")
+        with sc1: s_cname = st.text_input("نام مشتری", value=cs_name_val, key="cname_srv")
+        with sc2: s_cphone = st.text_input("شماره موبایل", value=cs_phone_val, key="cphone_srv")
+        s_ccar = st.text_input("مدل خودرو", value=cs_car_val, key="ccar_srv")
         
         if st.button("🔧 ثبت خدمات", use_container_width=True):
             if s_name and s_fee > 0:
@@ -395,6 +419,42 @@ if choice == "🛒 ثبت فروش / خدمات":
                 st.rerun()
             else:
                 st.error("شرح و مبلغ الزامی است.")
+                
+    with tab_refund:
+        st.info("🔄 در این بخش می‌توانید فاکتورهای اشتباه یا اجناس مرجوعی را باطل کنید. با این کار، جنس به انبار برمی‌گردد و از صندوق مالی کسر می‌شود.")
+        if st.session_state.user_role == "Admin":
+            conn = sqlite3.connect(DB_NAME)
+            recent_sales = pd.read_sql_query("SELECT id, product_code as 'کد کالا', name as 'شرح', quantity as 'تعداد', sale_date as 'تاریخ', customer_name as 'مشتری', staff_name as 'پرسنل' FROM sales ORDER BY id DESC LIMIT 30", conn)
+            conn.close()
+            
+            if not recent_sales.empty:
+                st.markdown("**آخرین فاکتورهای صادر شده:**")
+                st.dataframe(recent_sales, hide_index=True, use_container_width=True)
+                
+                st.markdown("---")
+                refund_id = st.number_input("کد ردیف فاکتور (id) جهت مرجوعی و ابطال را وارد کنید:", min_value=0, step=1)
+                confirm_refund = st.checkbox("تایید می‌کنم که این فاکتور باطل و کالا به انبار مرجوع شود.")
+                
+                if st.button("🗑️ ابطال فاکتور و بازگشت به انبار", disabled=not confirm_refund, type="primary", use_container_width=True):
+                    conn = sqlite3.connect(DB_NAME)
+                    c = conn.cursor()
+                    c.execute("SELECT product_code, quantity FROM sales WHERE id=?", (refund_id,))
+                    sale_rec = c.fetchone()
+                    if sale_rec:
+                        p_code, p_qty = sale_rec
+                        if p_code != 'SERVICE':
+                            c.execute("UPDATE products SET stock = stock + ? WHERE code=?", (p_qty, p_code))
+                        c.execute("DELETE FROM sales WHERE id=?", (refund_id,))
+                        conn.commit()
+                        st.success("✅ فاکتور با موفقیت باطل شد و موجودی به انبار بازگشت.")
+                    else:
+                        st.error("فاکتوری با این کد یافت نشد.")
+                    conn.close()
+                    st.rerun()
+            else:
+                st.warning("هیچ فاکتوری جهت مرجوعی وجود ندارد.")
+        else:
+            st.error("🔒 فقط صاحب مغازه (ادمین) دسترسی به ابطال و مرجوعی فاکتورها را دارد.")
 
     if st.session_state.last_invoice:
         inv = st.session_state.last_invoice
@@ -402,7 +462,6 @@ if choice == "🛒 ثبت فروش / خدمات":
         st.subheader("🧾 فاکتور مشتری")
         dis_text = f"\n🎁 تخفیف اعمال شده: {inv['discount']:,} تومان" if inv['discount'] > 0 else ""
         inv_text = f"🧾 فاکتور فروشگاه\nتاریخ: {inv['date']}\n👤 مشتری: {inv['c_name']}\n🚗 خودرو: {inv['c_car']}\n👷‍♂️ مسئول: {inv['staff']}\n-------------------\n📦 شرح: {inv['p_name']}\n🔢 تعداد: {inv['qty']}\n💵 فی: {inv['price']:,} تومان\n🔧 اجرت: {inv['install']:,} تومان{dis_text}\n-------------------\n💰 جمع کل: {inv['total']:,} تومان\n✨ سپاس از اعتماد شما ✨"
-        # نسخه امن برای نمایش HTML (جلوگیری از تزریق کد از طریق نام مشتری/ماشین و ...)
         safe_inv_html = html.escape(inv_text).replace(chr(10), '<br>')
         st.markdown(f"<div class='invoice-box'>{safe_inv_html}</div>", unsafe_allow_html=True)
         enc = urllib.parse.quote(inv_text)
@@ -417,7 +476,7 @@ if choice == "🛒 ثبت فروش / خدمات":
                 st.rerun()
 
 # ==========================================
-# بخش 2: انبار
+# بخش 2: انبار و هشدار کسری لیست خرید
 # ==========================================
 elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در انبار":
     st.header("📦 انبار مرکزی" if choice == "📦 مدیریت انبار" else "📦 جستجوی کالاها")
@@ -449,14 +508,17 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
     
     if st.session_state.user_role == "Admin" and not dsp_df.empty:
         excel_data = convert_df_to_excel(dsp_df)
-        st.download_button(label="📥 دانلود لیست انبار (فایل Excel)", data=excel_data, file_name=f"Inventory_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button(label="📥 دانلود لیست کل انبار (فایل Excel)", data=excel_data, file_name=f"Inventory_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     
     if st.session_state.user_role == "Admin":
         st.markdown("---")
-        out_df = df[df['موجودی'] == 0]
+        # هشدار نقطه سفارش و تولید لیست خرید (Reorder Point)
+        out_df = df[df['موجودی'] < 3]
         if not out_df.empty:
-            st.error(f"⚠️ {len(out_df)} کالا موجودی صفر دارند:")
+            st.error(f"⚠️ تعداد {len(out_df)} کالا موجودی صفر یا رو به اتمام (زیر ۳ عدد) دارند:")
             st.dataframe(out_df, use_container_width=True, hide_index=True)
+            reorder_excel = convert_df_to_excel(out_df)
+            st.download_button(label="🛒 دانلود لیست کسری‌ها (جهت سفارش به عمده‌فروش)", data=reorder_excel, file_name=f"Reorder_List_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
         st.markdown("---")
         st.subheader("🛠️ ویرایش / حذف کالا (مختص ادمین)")
@@ -507,7 +569,7 @@ elif choice == "📦 مدیریت انبار" or choice == "📦 جستجو در
                     st.rerun()
 
 # ==========================================
-# افزودن کالا (اضافه شدن تب آپلود گروهی اکسل)
+# افزودن کالا 
 # ==========================================
 elif choice == "➕ افزودن کالا":
     st.header("➕ افزودن کالای جدید به انبار")
@@ -556,7 +618,6 @@ elif choice == "➕ افزودن کالا":
     with tab_bulk:
         st.info("💡 با این قابلیت می‌توانید صدها کالا را در یک چشم به هم زدن وارد سیستم کنید! ابتدا فایل نمونه را دانلود کنید، لیست اجناس را در آن پر کنید و سپس فایل تکمیل‌شده را آپلود کنید.")
         
-        # ساخت فایل نمونه برای دانلود
         sample_df = pd.DataFrame(columns=['کد کالا (اختیاری)', 'نام کالا', 'مناسب خودرو', 'دسته‌بندی', 'قیمت خرید', 'قیمت فروش', 'موجودی'])
         sample_excel = convert_df_to_excel(sample_df)
         st.download_button(label="📥 ۱. دانلود فایل نمونه اکسل (خام)", data=sample_excel, file_name="Template_Products.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -579,7 +640,7 @@ elif choice == "➕ افزودن کالا":
                         for index, row in bulk_df.iterrows():
                             p_name = str(row['نام کالا'])
                             if p_name == 'nan' or not p_name.strip(): 
-                                continue # اگر نام کالا خالی بود رد شو
+                                continue
                                 
                             p_code = str(row['کد کالا (اختیاری)'])
                             if p_code == 'nan' or not p_code.strip():
@@ -612,7 +673,7 @@ elif choice == "➕ افزودن کالا":
                     st.error(f"خطا در خواندن فایل: {e}")
 
 # ==========================================
-# داشبورد و گزارش‌ها
+# داشبورد و گزارش‌ها و تلگرام
 # ==========================================
 elif choice == "📊 گزارش‌ها و داشبورد":
     st.header("📊 داشبورد مدیریت مالی")
@@ -629,6 +690,7 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     conn.close()
     
     now_dt = get_iran_time().replace(tzinfo=None)
+    d_prof, today_sales_amt = 0, 0
     
     if not sales_df.empty:
         sales_df['timestamp'] = pd.to_datetime(sales_df['timestamp']).dt.tz_localize(None)
@@ -647,8 +709,9 @@ elif choice == "📊 گزارش‌ها و داشبورد":
             c1, c2 = st.columns(2)
             with c1:
                 st.info("📊 فروش ۲۴ ساعت گذشته")
+                today_sales_amt = d_sales['درآمد نهایی فاکتور'].sum()
                 d_prof = d_sales['net_profit'].sum() - d_exp_sum - d_sales['staff_commission'].sum()
-                st.metric("درآمد کل صندوق", f"{d_sales['درآمد نهایی فاکتور'].sum():,.0f} T")
+                st.metric("درآمد کل صندوق", f"{today_sales_amt:,.0f} T")
                 st.metric("سود خالص صاحب مغازه", f"{d_prof:,.0f} T")
             with c2:
                 st.success("📊 فروش ۳۱ روز گذشته")
@@ -714,6 +777,21 @@ elif choice == "📊 گزارش‌ها و داشبورد":
                 st.dataframe(discount_df[['sale_date', 'staff_name', 'name', 'discount', 'درآمد نهایی فاکتور']], hide_index=True, use_container_width=True)
             else:
                 st.success("تا کنون هیچ تخفیفی روی فاکتورها ثبت نشده است.")
+
+    # سیستم ارسال گزارش به تلگرام
+    st.markdown("---")
+    st.subheader("📤 ارسال گزارش مالی به تلگرام")
+    tg_token, tg_chat_id = get_telegram_secrets()
+    if tg_token and tg_chat_id:
+        if st.button("ارسال خلاصه گزارش امروز به کانال/گروه تلگرام 🚀", use_container_width=True):
+            today_str = jdatetime.datetime.fromgregorian(datetime=now_dt).strftime('%Y/%m/%d')
+            msg_text = f"📊 گزارش مالی پایان روز ({today_str})\n\n💰 مجموع درآمد فروش و خدمات: {today_sales_amt:,.0f} تومان\n💎 سود خالص تقریبی: {d_prof:,.0f} تومان\n\n📌 توجه: مبالغ چک‌ها و طلب‌ها در این گزارش لحاظ نشده است."
+            if send_telegram_msg(tg_token, tg_chat_id, msg_text):
+                st.success("✅ گزارش با موفقیت به تلگرام شما ارسال شد!")
+            else:
+                st.error("❌ خطا در ارسال! اینترنت گوشی یا تنظیمات Token ربات را بررسی کنید.")
+    else:
+        st.info("💡 برای فعال‌سازی ارسال گزارش خودکار، باید `telegram_token` و `telegram_chat_id` را در تنظیمات Secrets وارد کنید.")
 
 # ==========================================
 # دفتر حساب
