@@ -149,6 +149,19 @@ if "user_name" not in st.session_state: st.session_state.user_name = None
 if "last_invoice" not in st.session_state: st.session_state.last_invoice = None
 if "scanned_add_code" not in st.session_state: st.session_state.scanned_add_code = ""
 
+# راه‌اندازی متغیرهای حافظه برای تکمیل خودکار فرم‌ها (بدون این‌ها فیلدها پر نمی‌شوند)
+if "name_s" not in st.session_state: st.session_state["name_s"] = ""
+if "phone_s" not in st.session_state: st.session_state["phone_s"] = ""
+if "car_s" not in st.session_state: st.session_state["car_s"] = ""
+if "last_search_sale" not in st.session_state: st.session_state.last_search_sale = ""
+if "vip_search_sale_input" not in st.session_state: st.session_state.vip_search_sale_input = ""
+
+if "name_srv" not in st.session_state: st.session_state["name_srv"] = ""
+if "phone_srv" not in st.session_state: st.session_state["phone_srv"] = ""
+if "car_srv" not in st.session_state: st.session_state["car_srv"] = ""
+if "last_search_srv" not in st.session_state: st.session_state.last_search_srv = ""
+if "vip_search_srv_input" not in st.session_state: st.session_state.vip_search_srv_input = ""
+
 st.sidebar.title("🚗 سیستم فروشگاه اسپرت")
 st.sidebar.markdown("---")
 
@@ -264,8 +277,6 @@ if choice == "🛒 ثبت فروش / خدمات":
     conn.close()
     
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist() if not staff_df_list.empty else ["ادمین (بدون پورسانت)"]
-    if not vip_df.empty:
-        vip_df.fillna('', inplace=True)
 
     tab_sale, tab_service, tab_refund = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات (بدون کالا)", "🔄 مرجوعی کالا"])
     
@@ -326,26 +337,36 @@ if choice == "🛒 ثبت فروش / خدمات":
                         s_staff = st.session_state.user_name
                         st.info(f"👷‍♂️ فاکتور به نام شما ({s_staff}) ثبت می‌شود.")
                     
-                    # 🌟 ارتقای قطعی برای موبایل: جستجوی متنی خالص (بدون منوی انتخابی)
+                    # 🌟 راه حل قطعی و زنده برای تکمیل فرم مشتری (جستجوی متنی خالص)
                     st.markdown("---")
                     st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
-                    vip_search_q = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_sale")
+                    vip_search_q = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری قدیمی را تایپ کرده و Enter بزنید:", key="vip_search_sale_input")
                     
-                    c_name_val, c_phone_val, c_car_val = "", "", ""
+                    # پردازش جستجو در دیتابیس و پر کردن خودکار فرم‌ها در پس‌زمینه
+                    if vip_search_q and vip_search_q != st.session_state.last_search_sale:
+                        st.session_state.last_search_sale = vip_search_q
+                        if not vip_df.empty:
+                            match = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q, case=False, na=False)) | 
+                                           (vip_df['customer_name'].astype(str).str.contains(vip_search_q, case=False, na=False))]
+                            if not match.empty:
+                                st.session_state["name_s"] = str(match.iloc[0]['customer_name'])
+                                st.session_state["phone_s"] = str(match.iloc[0]['customer_phone'])
+                                st.session_state["car_s"] = str(match.iloc[0]['car_model'])
+                    
+                    # نمایش پیغام موفقیت پیدا شدن مشتری
                     if vip_search_q and not vip_df.empty:
                         match = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q, case=False, na=False)) | 
                                        (vip_df['customer_name'].astype(str).str.contains(vip_search_q, case=False, na=False))]
                         if not match.empty:
-                            c_info = match.iloc[0]
-                            c_name_val, c_phone_val, c_car_val = str(c_info['customer_name']), str(c_info['customer_phone']), str(c_info['car_model'])
-                            st.success(f"✅ مشتری پیدا شد: {c_name_val} - {c_phone_val}")
+                            st.success(f"✅ مشتری پیدا شد: {match.iloc[0]['customer_name']} - {match.iloc[0]['customer_phone']}")
                         else:
                             st.warning("⚠️ مشتری با این مشخصات در سیستم یافت نشد.")
 
+                    # کادرهای متنی متصل به متغیرهای هوشمند
                     cc1, cc2 = st.columns(2)
-                    with cc1: c_name = st.text_input("نام مشتری (اختیاری)", value=c_name_val, key="name_s")
-                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)", value=c_phone_val, key="phone_s")
-                    c_car = st.text_input("مدل ماشین", value=c_car_val, key="car_s")
+                    with cc1: c_name = st.text_input("نام مشتری (اختیاری)", key="name_s")
+                    with cc2: c_phone = st.text_input("شماره موبایل (اختیاری)", key="phone_s")
+                    c_car = st.text_input("مدل ماشین", key="car_s")
 
                     if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
                         now_dt = get_iran_time()
@@ -374,6 +395,14 @@ if choice == "🛒 ثبت فروش / خدمات":
                             conn.close()
 
                             st.session_state.last_invoice = {"date":now_str, "c_name":c_name or "نقدی", "c_phone":c_phone, "c_car":c_car, "p_name":product[1], "qty":f_qty, "price":product[4], "install":f_install, "discount":f_discount, "total":total_bill, "staff":s_staff}
+                            
+                            # خالی کردن اتوماتیک فرم‌ها برای مشتری بعدی
+                            st.session_state["name_s"] = ""
+                            st.session_state["phone_s"] = ""
+                            st.session_state["car_s"] = ""
+                            st.session_state.last_search_sale = ""
+                            st.session_state["vip_search_sale_input"] = ""
+                            
                             st.success("فروش ثبت شد!")
                             st.rerun()
                 else:
@@ -393,26 +422,33 @@ if choice == "🛒 ثبت فروش / خدمات":
             s_staff_srv = st.session_state.user_name
             st.info(f"👷‍♂️ فاکتور خدمات به نام شما ({s_staff_srv}) ثبت می‌شود.")
         
-        # 🌟 ارتقای جستجوی متنی خالص برای بخش خدمات
+        # 🌟 ارتقای بخش جستجو برای بخش خدمات
         st.markdown("---")
         st.markdown("🔍 **تکمیل خودکار اطلاعات مشتری**")
-        vip_search_q_srv = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_srv")
+        vip_search_q_srv = st.text_input("⌨️ شماره موبایل (مثلاً 0935) یا نام مشتری را تایپ کرده و Enter بزنید:", key="vip_search_srv_input")
         
-        cs_name_val, cs_phone_val, cs_car_val = "", "", ""
+        if vip_search_q_srv and vip_search_q_srv != st.session_state.last_search_srv:
+            st.session_state.last_search_srv = vip_search_q_srv
+            if not vip_df.empty:
+                match_srv = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q_srv, case=False, na=False)) | 
+                                   (vip_df['customer_name'].astype(str).str.contains(vip_search_q_srv, case=False, na=False))]
+                if not match_srv.empty:
+                    st.session_state["name_srv"] = str(match_srv.iloc[0]['customer_name'])
+                    st.session_state["phone_srv"] = str(match_srv.iloc[0]['customer_phone'])
+                    st.session_state["car_srv"] = str(match_srv.iloc[0]['car_model'])
+        
         if vip_search_q_srv and not vip_df.empty:
             match_srv = vip_df[(vip_df['customer_phone'].astype(str).str.contains(vip_search_q_srv, case=False, na=False)) | 
                                (vip_df['customer_name'].astype(str).str.contains(vip_search_q_srv, case=False, na=False))]
             if not match_srv.empty:
-                c_info_srv = match_srv.iloc[0]
-                cs_name_val, cs_phone_val, cs_car_val = str(c_info_srv['customer_name']), str(c_info_srv['customer_phone']), str(c_info_srv['car_model'])
-                st.success(f"✅ مشتری پیدا شد: {cs_name_val} - {cs_phone_val}")
+                st.success(f"✅ مشتری پیدا شد: {match_srv.iloc[0]['customer_name']} - {match_srv.iloc[0]['customer_phone']}")
             else:
                 st.warning("⚠️ مشتری با این مشخصات در سیستم یافت نشد.")
 
         sc1, sc2 = st.columns(2)
-        with sc1: s_cname = st.text_input("نام مشتری", value=cs_name_val, key="cname_srv_input")
-        with sc2: s_cphone = st.text_input("شماره موبایل", value=cs_phone_val, key="cphone_srv_input")
-        s_ccar = st.text_input("مدل خودرو", value=cs_car_val, key="ccar_srv_input")
+        with sc1: s_cname = st.text_input("نام مشتری", key="name_srv")
+        with sc2: s_cphone = st.text_input("شماره موبایل", key="phone_srv")
+        s_ccar = st.text_input("مدل خودرو", key="car_srv")
         
         if st.button("🔧 ثبت خدمات", use_container_width=True):
             if s_name and s_fee > 0:
@@ -433,6 +469,14 @@ if choice == "🛒 ثبت فروش / خدمات":
                 conn.commit()
                 conn.close()
                 st.session_state.last_invoice = {"date":now_str, "c_name":s_cname or "نقدی", "c_phone":s_cphone, "c_car":s_ccar, "p_name":s_name, "qty":0, "price":0, "install":s_fee, "discount":0, "total":s_fee, "staff":s_staff_srv}
+                
+                # خالی کردن اتوماتیک فرم‌ها برای مشتری بعدی
+                st.session_state["name_srv"] = ""
+                st.session_state["phone_srv"] = ""
+                st.session_state["car_srv"] = ""
+                st.session_state.last_search_srv = ""
+                st.session_state["vip_search_srv_input"] = ""
+                
                 st.success("خدمات ثبت شد!")
                 st.rerun()
             else:
