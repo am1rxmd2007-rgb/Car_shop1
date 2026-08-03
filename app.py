@@ -29,7 +29,7 @@ except ImportError:
 # ==========================================
 # تنظیمات صفحه و استایل‌ها
 # ==========================================
-st.set_page_config(page_title="فروشگاه لوازم جانبی و اسپرت خودرو", page_icon="🚗", layout="wide")
+st.set_page_config(page_title="سیستم یکپارچه فروشگاه", page_icon="🚗", layout="wide")
 
 st.markdown("""
 <style>
@@ -56,7 +56,7 @@ st.markdown("""
     }
     .stButton>button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
 
-    /* بنر اصلی */
+    /* بنر اصلی کاتالوگ */
     .shop-hero {
         background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         border-radius: 18px; padding: 28px 32px; color: #fff; margin-bottom: 22px;
@@ -92,10 +92,10 @@ st.markdown("""
         font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
     }
     .pc-badge.out { background: #c62828; }
+    .pc-badge.low { background: #ff9800; }
     .pc-name { font-weight: 700; font-size: 15px; color: #1a2b3c; margin: 4px 0; min-height: 42px; }
     .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; }
     .pc-price { font-size: 17px; font-weight: 800; color: #2e7d32; margin-top: 6px; }
-    .pc-stock { font-size: 11px; color: #757575; }
 
     /* سبد خرید ساید‌بار */
     .cart-item {
@@ -124,10 +124,6 @@ st.markdown("""
         .shop-hero h1 { font-size: 1.25rem; }
         .pc-name { min-height: auto; }
         [data-testid="stSidebar"] { direction: rtl; }
-    }
-    /* زیر ۶۴۰px کاشی‌ها تک‌ستونی می‌شوند */
-    @media (max-width: 640px) {
-        .shop-hero h1 { font-size: 1.1rem; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -222,71 +218,6 @@ def get_engine():
     return create_engine("sqlite:///inventory.db"), "SQLite (Local Offline)"
 
 engine, db_type = get_engine()
-
-@st.cache_data
-def get_staff_list():
-    return pd.read_sql_query("SELECT name, commission_rate, active FROM staff WHERE active=1 ORDER BY name", engine)
-
-@st.cache_data
-def get_products_summary():
-    return pd.read_sql_query("""SELECT code as 'کد', name as 'نام', category as 'دسته', compatible_cars as 'ماشین',
-                                      purchase_price as 'خرید', sale_price as 'فروش', stock as 'موجودی', min_stock as 'حد هشدار'
-                                       FROM products ORDER BY name""", engine)
-
-@st.cache_data
-def get_sales_data():
-    return pd.read_sql_query("SELECT * FROM sales", engine)
-
-@st.cache_data
-def get_expenses_data():
-    return pd.read_sql_query("SELECT id, title, amount, exp_date, timestamp, category FROM expenses", engine)
-
-@st.cache_data
-def get_ledger_data(record_type, p_label="مشتری بدهکار", show_settled=False):
-    status_clause = "" if show_settled else "AND status != 'تسویه شده'"
-    query = (
-        "SELECT id as 'کد', person_name as '" + p_label + "', amount as 'مبلغ', "
-        "due_date as 'سررسید', description as 'بابت', status as 'وضعیت' "
-        "FROM ledger WHERE record_type=:rt " + status_clause + " ORDER BY id DESC"
-    )
-    return pd.read_sql_query(text(query), engine, params={"rt": record_type})
-
-@st.cache_data
-def get_vip_customers():
-    return pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != '' OR customer_phone != ''", engine)
-
-@st.cache_data
-def get_catalog_data():
-    """بارگذاری کاتالوگ محصولات با فیلدهای لازم برای نمایش مشتری."""
-    return pd.read_sql_query(
-        """SELECT code, name, category, compatible_cars, sale_price, stock, min_stock
-           FROM products
-           WHERE sale_price > 0 AND stock > 0
-           ORDER BY name""",
-        engine,
-    )
-
-def refresh_caches(scope="all"):
-    """پاک‌سازی کش‌ها پس از ثبت/ویرایش داده تا گزارش‌ها و لیست‌ها هماهنگ بمانند."""
-    caches = {
-        "all": [get_staff_list, get_products_summary, get_sales_data,
-                get_expenses_data, get_vip_customers, get_catalog_data],
-        "products": [get_products_summary, get_catalog_data],
-        "sales": [get_sales_data, get_vip_customers],
-        "staff": [get_staff_list],
-        "expenses": [get_expenses_data],
-    }
-    for fn in caches.get(scope, caches["all"]):
-        try:
-            fn.clear()
-        except Exception:
-            pass
-    # ledger وابسته به آرگومان است؛ کل آن پاک می‌شود
-    if scope in ("all", "ledger"):
-        try:
-            get_ledger_data.clear()
-        except Exception:
-            pass
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
@@ -523,18 +454,22 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     return buffer
 
 # ==========================================
-# مدیریت لاگین
+# مدیریت متغیرهای State (از جمله سبد خرید)
 # ==========================================
 for key in ["user_role", "user_name", "last_invoice"]:
     if key not in st.session_state: st.session_state[key] = None
 for key in ["scanned_add_code", "name_s", "phone_s", "car_s", "last_search_sale", "vip_search_sale_input"]:
     if key not in st.session_state: st.session_state[key] = ""
-st.session_state["clear_sale_form"] = False
+if "clear_sale_form" not in st.session_state: st.session_state.clear_sale_form = False
+if "cart_items" not in st.session_state: st.session_state.cart_items = []
 
-shop_name_display = get_setting("shop_name", "فروشگاه لوازم جانبی و اسپرت خودرو")
+shop_name_display = get_setting("shop_name", "فروشگاه لوازم جانبی خودرو")
 st.sidebar.title(f"🚗 {shop_name_display}")
 st.sidebar.caption(f"📡 اتصال دیتابیس: {db_type}")
 
+# ==========================================
+# سیستم ورود / لاگین
+# ==========================================
 if st.session_state.user_role is None:
     st.sidebar.subheader("🔐 ورود به سیستم")
     login_type = st.sidebar.radio("ورود به عنوان:", ["شاگرد / پرسنل فروش", "صاحب مغازه (ادمین)"])
@@ -549,7 +484,7 @@ if st.session_state.user_role is None:
             else:
                 st.sidebar.error("رمز اشتباه است!")
     else:
-        staff_df = get_staff_list()
+        staff_df = pd.read_sql_query("SELECT name FROM staff WHERE active=1 ORDER BY name", engine)
         if not staff_df.empty:
             s_name = st.sidebar.selectbox("نام خود را انتخاب کنید:", staff_df['name'].tolist())
             s_pass = st.sidebar.text_input("رمز عبور خود را وارد کنید:", type="password")
@@ -592,20 +527,152 @@ if st.session_state.user_role == "Staff":
 if st.sidebar.button("خروج از سیستم"):
     st.session_state.user_role = None
     st.session_state.user_name = None
+    st.session_state.cart_items = []
     st.rerun()
 
 menu = (
-    ["🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد",
-     "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل", "⚙️ تنظیمات و پشتیبان‌گیری", "🛍️ مشاهده کتالوگ"]
+    ["🛍️ مشاهده کاتالوگ", "🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد",
+     "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل", "⚙️ تنظیمات و پشتیبان‌گیری"]
     if st.session_state.user_role == "Admin"
-    else ["🛒 ثبت فروش / خدمات", "📦 جستجو در انبار", "🛍️ مشاهده کتالوگ"]
+    else ["🛍️ مشاهده کاتالوگ", "🛒 ثبت فروش / خدمات", "📦 جستجو در انبار"]
 )
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
 # ==========================================
+# سیستم سبد خرید سایدبار
+# ==========================================
+if st.session_state.get('cart_items'):
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🛒 سبد خرید شما")
+    cart_total = sum(item['total'] for item in st.session_state.cart_items)
+    
+    for idx, item in enumerate(st.session_state.cart_items):
+        st.sidebar.markdown(f"""
+        <div class="cart-item">
+            <div>
+                <div class="cart-item-name">{item['name']}</div>
+                <div class="cart-item-qty">{item['qty']} عدد</div>
+            </div>
+            <div class="cart-item-price">{item['total']:,.0f} T</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.sidebar.button("❌ حذف", key=f"rm_cart_{item['code']}_{idx}"):
+            st.session_state.cart_items.remove(item)
+            st.rerun()
+
+    st.sidebar.markdown(f"<div class='cart-total'>جمع کل: {cart_total:,.0f} تومان</div>", unsafe_allow_html=True)
+    
+    if st.sidebar.button("🚀 تسویه و ثبت فروش", type="primary", use_container_width=True):
+        now_dt = iran_naive()
+        now_str = jalali_str(now_dt)
+        staff_name = st.session_state.user_name if st.session_state.user_role == "Staff" else "ادمین (بدون پورسانت)"
+        
+        try:
+            with engine.begin() as conn:
+                staff_rate = 0
+                if staff_name != "ادمین (بدون پورسانت)":
+                    s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": staff_name}).fetchone()
+                    if s_res: staff_rate = s_res[0]
+
+                for item in st.session_state.cart_items:
+                    # چک موجودی
+                    curr_stock = conn.execute(text("SELECT stock, purchase_price FROM products WHERE code=:c"), {"c": item['code']}).fetchone()
+                    if curr_stock is None or curr_stock[0] < item['qty']:
+                        raise Exception(f"موجودی کالای {item['name']} کافی نیست!")
+                    
+                    purch_price = curr_stock[1]
+                    net_prof = (item['price'] - purch_price) * item['qty']
+                    
+                    # کسر از انبار
+                    conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c"), {"q": item['qty'], "c": item['code']})
+                    
+                    # ثبت فاکتور
+                    conn.execute(text("""
+                        INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp,
+                        customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
+                        VALUES (:pc, :n, :q, :sp, :sd, :ts, :cn, :cp, :cm, :i, :np, :sn, :sc, :d)
+                    """), {
+                        "pc": item['code'], "n": item['name'], "q": item['qty'], "sp": item['price'], "sd": now_str,
+                        "ts": str(now_dt), "cn": "مشتری نقدی (کاتالوگ)", "cp": "", "cm": "عمومی",
+                        "i": 0, "np": net_prof, "sn": staff_name,
+                        "sc": float(net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": 0
+                    })
+            
+            st.session_state.cart_items = []
+            st.toast("✅ خرید با موفقیت ثبت و از انبار کسر شد!", icon="🛒")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(str(e))
+
+# ==========================================
+# 0. صفحه کاتالوگ (ویترین محصولات)
+# ==========================================
+if choice == "🛍️ مشاهده کاتالوگ":
+    st.markdown(f'''
+    <div class="shop-hero">
+        <h1>{shop_name_display}</h1>
+        <p>مرور و انتخاب سریع کالاها جهت افزودن به سبد خرید</p>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    catalog_df = pd.read_sql_query("SELECT * FROM products ORDER BY category, name", engine)
+    
+    if catalog_df.empty:
+        st.info("هنوز کالایی در انبار وجود ندارد.")
+    else:
+        cat_search = st.text_input("🔍 جستجوی سریع در کاتالوگ (نام کالا، دسته‌بندی یا ماشین):")
+        if cat_search:
+            mask = catalog_df.apply(lambda row: row.astype(str).str.contains(cat_search, case=False).any(), axis=1)
+            catalog_df = catalog_df[mask]
+
+        st.markdown(f"### 📦 محصولات ({len(catalog_df)} قلم)")
+        cols = st.columns(3)
+        for idx, row in catalog_df.iterrows():
+            col = cols[idx % 3]
+            with col:
+                low_stock = row['stock'] <= row['min_stock']
+                out_of_stock = row['stock'] <= 0
+                
+                discount_class = "out-of-stock" if out_of_stock else ("low-stock" if low_stock else "")
+                badge_class = "out" if out_of_stock else ("low" if low_stock else "")
+                badge_text = "ناموجود" if out_of_stock else ("موجودی کم" if low_stock else "موجود")
+                
+                card_html = f"""
+                <div class="product-card {discount_class}">
+                    <div class="pc-badge {badge_class}">{badge_text} ({row['stock']} عدد)</div>
+                    <div class="pc-name">{row['name']}</div>
+                    <div class="pc-meta">{row['category']} – مناسب: {row['compatible_cars']}</div>
+                    <div class="pc-price">{row['sale_price']:,.0f} تومان</div>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
+                
+                if st.button("🛒 افزودن به سبد", key=f"add_{row['code']}", disabled=out_of_stock, use_container_width=True):
+                    existing = next((i for i in st.session_state.cart_items if i['code'] == row['code']), None)
+                    if existing:
+                        if existing['qty'] < row['stock']:
+                            existing['qty'] += 1
+                            existing['total'] = existing['qty'] * existing['price']
+                            st.toast("تعداد کالا در سبد افزایش یافت!", icon="✅")
+                        else:
+                            st.toast("موجودی انبار کافی نیست!", icon="❌")
+                    else:
+                        st.session_state.cart_items.append({
+                            'code': row['code'],
+                            'name': row['name'],
+                            'qty': 1,
+                            'price': row['sale_price'],
+                            'total': row['sale_price']
+                        })
+                        st.toast(f"{row['name']} به سبد اضافه شد!", icon="✅")
+                    st.rerun()
+
+
+# ==========================================
 # 1. ثبت فروش، خدمات و مرجوعی
 # ==========================================
-if choice == "🛒 ثبت فروش / خدمات":
+elif choice == "🛒 ثبت فروش / خدمات":
     st.header("🛒 ثبت فاکتور مشتری")
 
     staff_df_list = pd.read_sql_query("SELECT name FROM staff WHERE active=1 ORDER BY name", engine)
@@ -764,9 +831,8 @@ if choice == "🛒 ثبت فروش / خدمات":
                     with engine.begin() as conn:
                         staff_rate = 0
                         if s_staff_srv != "ادمین (بدون پورسانت)":
-                            staff_list = get_staff_list()
-                            s_res = staff_list[staff_list['name'] == s_staff_srv]['commission_rate'].values
-                            if len(s_res) > 0: staff_rate = s_res[0]
+                            s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff_srv}).fetchone()
+                            if s_res: staff_rate = s_res[0]
 
                         conn.execute(text("""
                             INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
@@ -788,60 +854,58 @@ if choice == "🛒 ثبت فروش / خدمات":
 
     with tab_refund:
         if st.session_state.user_role == "Admin":
-            st.info("💡 برای ابطال، کد فاکتور را در کادر سمت راست وارد کنید. برای پیدا کردن کد فاکتور می‌توانید از ابزار جستجو در سمت چپ استفاده نمایید.")
-            
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                st.markdown("### 🗑️ ۱. ابطال فاکتور")
-                refund_id = st.number_input("کد فاکتور (جهت ابطال):", min_value=0, step=1, key="refund_id_input")
-                confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار", key="confirm_refund_chk")
+            st.markdown("🔍 **ابتدا کالای مرجوعی را پیدا کنید:**")
+            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method", horizontal=True)
+            ref_code = ""
 
-                if st.button("🗑️ ثبت ابطال و مرجوعی", disabled=not confirm_refund, type="primary"):
-                    if refund_id > 0:
-                        with engine.begin() as conn:
-                            sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i"), {"i": refund_id}).mappings().fetchone()
-                            if sale_rec:
-                                if sale_rec['product_code'] != 'SERVICE':
-                                    conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
-                                conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
-                                st.success(f"✅ فاکتور شماره {refund_id} باطل شد و موجودی به انبار بازگشت.")
-                            else:
-                                st.error("❌ فاکتوری با این کد یافت نشد.")
-                    else:
-                        st.warning("لطفاً یک کد معتبر وارد کنید.")
-
-            with c2:
-                st.markdown("### 🔍 ۲. جستجوی فاکتور")
-                ref_method = st.radio("روش جستجو:", ("مشاهده همه فاکتورهای اخیر", "جستجو بر اساس کالا"), horizontal=True)
-                ref_code = ""
-                show_all = False
-
-                if ref_method == "جستجو بر اساس کالا":
-                    ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:")
-                    if ref_q:
-                        ref_df = pd.read_sql_query(text("SELECT code, name FROM products WHERE name LIKE :q"), engine, params={"q": f"%{ref_q}%"})
-                        if not ref_df.empty:
-                            label_map = {f"{r['name']} - کد: {r['code']}": r['code'] for _, r in ref_df.iterrows()}
-                            picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()))
-                            if picked_label: ref_code = label_map[picked_label]
-                        else: st.info("کالایی یافت نشد.")
+            if ref_method == "کیبورد / بارکدخوان فیزیکی":
+                ref_code = st.text_input("کد کالا را وارد/اسکن کنید:", key="ref_barcode")
+            elif ref_method == "دوربین (اسکنر خودکار)":
+                if HAS_SCANNER_PKG:
+                    scanned_ref = qrcode_scanner(key='ref_scanner')
+                    if scanned_ref: ref_code = scanned_ref
                 else:
-                    show_all = True
+                    st.warning("پکیج اسکنر نصب نیست.")
+            elif ref_method == "جستجوی نام کالا":
+                ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:", key="ref_name")
+                if ref_q:
+                    ref_df = pd.read_sql_query(
+                        text("SELECT code, name FROM products WHERE name LIKE :q"),
+                        engine, params={"q": f"%{ref_q}%"}
+                    )
+                    if not ref_df.empty:
+                        label_map = {f"{r['name']} - کد: {r['code']}": r['code'] for _, r in ref_df.iterrows()}
+                        picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="ref_sel")
+                        if picked_label:
+                            ref_code = label_map[picked_label]
+                    else:
+                        st.info("کالایی یافت نشد.")
             
-            st.markdown("---")
-            if show_all:
-                st.markdown("**🧾 ۵۰ فاکتور اخیر:**")
-                sales_of_product = pd.read_sql_query(text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales ORDER BY id DESC LIMIT 50"), engine)
-            elif ref_code:
-                st.markdown(f"**🧾 فاکتورهای صادر شده برای کد: {ref_code}**")
-                sales_of_product = pd.read_sql_query(text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 50"), engine, params={"c": ref_code})
-            else:
-                sales_of_product = pd.DataFrame()
-                
-            if not sales_of_product.empty:
-                st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
-            elif ref_code:
-                st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
+            if ref_code:
+                st.markdown("---")
+                st.markdown("**🧾 فاکتورهای صادر شده برای این کالا:**")
+                sales_of_product = pd.read_sql_query(
+                    text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 20"),
+                    engine, params={"c": ref_code}
+                )
+                if not sales_of_product.empty:
+                    st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
+                    
+                    refund_id = st.number_input("کد فاکتور جهت ابطال را وارد کنید:", min_value=0, step=1)
+                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار")
+
+                    if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
+                        with engine.begin() as conn:
+                            sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i AND product_code=:c"), {"i": refund_id, "c": ref_code}).mappings().fetchone()
+                            if sale_rec:
+                                conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
+                                conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
+                                st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
+                                st.rerun()
+                            else:
+                                st.error("کد فاکتور اشتباه است یا متعلق به این کالا نیست.")
+                else:
+                    st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
         else:
             st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
@@ -855,6 +919,7 @@ if choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
+        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         
@@ -1195,8 +1260,8 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     else:
         start_dt = iran_now - timedelta(days=3650) 
 
-    sales_df = get_sales_data()
-    exp_df = get_expenses_data()
+    sales_df = pd.read_sql_query("SELECT * FROM sales", engine)
+    exp_df = pd.read_sql_query("SELECT * FROM expenses", engine)
     
     start_ts = pd.Timestamp(start_dt)
     end_ts = pd.Timestamp(end_dt)
@@ -1310,7 +1375,13 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
                 st.error("نام و مبلغ الزامی است.")
 
         show_settled = st.checkbox("نمایش موارد تسویه‌شده هم", key=f"sw_{l_type}")
-        df_ledger = get_ledger_data(l_type, p_label, show_settled)
+        status_clause = "" if show_settled else "AND status != 'تسویه شده'"
+        df_ledger = pd.read_sql_query(
+            text(f"""SELECT id as 'کد', person_name as '{p_label}', amount as 'مبلغ', due_date as 'سررسید',
+                            description as 'بابت', status as 'وضعیت'
+                     FROM ledger WHERE record_type=:rt {status_clause} ORDER BY id DESC"""),
+            engine, params={"rt": l_type}
+        )
         if not df_ledger.empty:
             st.dataframe(df_ledger, hide_index=True, use_container_width=True)
             sel_id = st.number_input(f"کد ردیف {title} جهت اقدام:", min_value=0, step=1, key=f"sel_{l_type}")
@@ -1399,7 +1470,7 @@ elif choice == "⚙️ تنظیمات و پشتیبان‌گیری":
         st.error("⚠️ در حال حاضر برنامه از دیتابیس محلی (SQLite) استفاده می‌کند. اگر این برنامه روی Streamlit Cloud اجرا می‌شود، با هر ری‌استارت یا آپدیت سرور، تمام اطلاعات (فروش‌ها، انبار، مشتریان) برای همیشه پاک خواهد شد. برای جلوگیری از این خطر جدی، یک دیتابیس ابری مثل Supabase تنظیم کرده و آدرس آن را در بخش Secrets پروژه‌تان در Streamlit Cloud، با ساختار [supabase] db_url وارد کنید.")
 
     with st.form("shop_settings_form"):
-        s_name = st.text_input("نام فروشگاه", value=get_setting("shop_name", "فروشگاه لوازم جانبی و اسپرت خودرو"))
+        s_name = st.text_input("نام فروشگاه", value=get_setting("shop_name", "فروشگاه لوازم جانبی خودرو"))
         s_addr = st.text_input("آدرس فروشگاه", value=get_setting("shop_address", ""))
         s_phone = st.text_input("تلفن فروشگاه", value=get_setting("shop_phone", ""))
         s_footer = st.text_input("متن پایین فاکتور", value=get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم"))
