@@ -29,22 +29,106 @@ except ImportError:
 # ==========================================
 # تنظیمات صفحه و استایل‌ها
 # ==========================================
-st.set_page_config(page_title="سیستم یکپارچه فروشگاه اسپرت", page_icon="🚗", layout="wide")
+st.set_page_config(page_title="فروشگاه لوازم جانبی و اسپرت خودرو", page_icon="🚗", layout="wide")
 
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800&display=swap');
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
 
-    .stMarkdown, p, h1, h2, h3, h4, label, .stSelectbox, .stTextInput {
-        direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif !important;
+    html, body, .stMarkdown, p, h1, h2, h3, h4, h5, label, .stSelectbox, .stTextInput,
+    .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame, span, div {
+        direction: rtl; text-align: right;
+        font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     [data-testid="stSidebar"] { direction: rtl; }
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
-    .invoice-box { border: 2px dashed #4CAF50; padding: 20px; border-radius: 10px; background-color: #f9f9f9; color: #333; margin-top: 15px; direction: rtl; text-align: right; }
-    .metric-box { padding: 15px; border-radius: 10px; background-color: #e8f5e9; border: 1px solid #4CAF50; margin-bottom: 20px; text-align: center; font-size: 20px; font-weight: bold; color: #2e7d32; }
-    @media (max-width: 768px) { .block-container { padding-top: 2rem; padding-bottom: 2rem; } }
+
+    /* هدر و فاصله کلی */
+    .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 1280px; }
+
+    /* دکمه‌ها */
+    .stButton>button {
+        width: 100%; border-radius: 10px; font-weight: 700;
+        transition: all .2s ease; border: 1px solid transparent;
+    }
+    .stButton>button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+
+    /* بنر اصلی */
+    .shop-hero {
+        background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+        border-radius: 18px; padding: 28px 32px; color: #fff; margin-bottom: 22px;
+        box-shadow: 0 8px 24px rgba(15,32,39,.25);
+    }
+    .shop-hero h1 { color: #fff; font-weight: 800; font-size: 1.7rem; margin-bottom: 6px; }
+    .shop-hero p { color: #cfd8dc; font-size: .95rem; margin: 0; }
+
+    /* کاشی آمار */
+    .metric-box {
+        padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #e8f5e9, #f1f8f1);
+        border: 1px solid #4CAF50; margin-bottom: 16px; text-align: center;
+        font-size: 18px; font-weight: 700; color: #2e7d32;
+    }
+
+    /* فاکتور */
+    .invoice-box {
+        border: 2px dashed #4CAF50; padding: 22px; border-radius: 12px;
+        background-color: #f9f9f9; color: #333; margin-top: 16px;
+        direction: rtl; text-align: right; line-height: 1.9;
+    }
+
+    /* کارت محصول در کاتالوگ */
+    .product-card {
+        background: #fff; border: 1px solid #e3e8ee; border-radius: 14px;
+        padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.05);
+        transition: all .2s ease; height: 100%;
+        display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.10); border-color: #1976d2; }
+    .pc-badge {
+        display: inline-block; background: #1565c0; color: #fff; font-size: 11px;
+        font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
+    }
+    .pc-badge.out { background: #c62828; }
+    .pc-name { font-weight: 700; font-size: 15px; color: #1a2b3c; margin: 4px 0; min-height: 42px; }
+    .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; }
+    .pc-price { font-size: 17px; font-weight: 800; color: #2e7d32; margin-top: 6px; }
+    .pc-stock { font-size: 11px; color: #757575; }
+
+    /* سبد خرید ساید‌بار */
+    .cart-item {
+        background: #f8fafc; border: 1px solid #e3e8ee; border-radius: 10px;
+        padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between;
+        align-items: center; gap: 8px;
+    }
+    .cart-item-name { font-weight: 600; font-size: 13px; color: #33475b; }
+    .cart-item-qty { font-size: 12px; color: #7a8da0; }
+    .cart-item-price { font-size: 13px; font-weight: 700; color: #2e7d32; white-space: nowrap; }
+    .cart-total {
+        margin-top: 10px; padding-top: 10px; border-top: 2px dashed #4CAF50;
+        font-size: 16px; font-weight: 800; color: #1b5e20; text-align: left;
+    }
+
+    /* هشدار موجودی کم */
+    .low-stock {
+        background: #fff3e0; border-right: 4px solid #ef6c00; padding: 10px 14px;
+        border-radius: 8px; color: #e65100; font-weight: 600; margin-bottom: 8px;
+    }
+
+    /* واکنش‌گرا (موبایل) */
+    @media (max-width: 768px) {
+        .block-container { padding-top: 1rem; padding-bottom: 2rem; }
+        .shop-hero { padding: 18px 16px; }
+        .shop-hero h1 { font-size: 1.25rem; }
+        .pc-name { min-height: auto; }
+        [data-testid="stSidebar"] { direction: rtl; }
+    }
+    /* زیر ۶۴۰px کاشی‌ها تک‌ستونی می‌شوند */
+    @media (max-width: 640px) {
+        .shop-hero h1 { font-size: 1.1rem; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,6 +222,71 @@ def get_engine():
     return create_engine("sqlite:///inventory.db"), "SQLite (Local Offline)"
 
 engine, db_type = get_engine()
+
+@st.cache_data
+def get_staff_list():
+    return pd.read_sql_query("SELECT name, commission_rate, active FROM staff WHERE active=1 ORDER BY name", engine)
+
+@st.cache_data
+def get_products_summary():
+    return pd.read_sql_query("""SELECT code as 'کد', name as 'نام', category as 'دسته', compatible_cars as 'ماشین',
+                                      purchase_price as 'خرید', sale_price as 'فروش', stock as 'موجودی', min_stock as 'حد هشدار'
+                                       FROM products ORDER BY name""", engine)
+
+@st.cache_data
+def get_sales_data():
+    return pd.read_sql_query("SELECT * FROM sales", engine)
+
+@st.cache_data
+def get_expenses_data():
+    return pd.read_sql_query("SELECT id, title, amount, exp_date, timestamp, category FROM expenses", engine)
+
+@st.cache_data
+def get_ledger_data(record_type, p_label="مشتری بدهکار", show_settled=False):
+    status_clause = "" if show_settled else "AND status != 'تسویه شده'"
+    query = (
+        "SELECT id as 'کد', person_name as '" + p_label + "', amount as 'مبلغ', "
+        "due_date as 'سررسید', description as 'بابت', status as 'وضعیت' "
+        "FROM ledger WHERE record_type=:rt " + status_clause + " ORDER BY id DESC"
+    )
+    return pd.read_sql_query(text(query), engine, params={"rt": record_type})
+
+@st.cache_data
+def get_vip_customers():
+    return pd.read_sql_query("SELECT DISTINCT customer_name, customer_phone, car_model FROM sales WHERE customer_name != '' OR customer_phone != ''", engine)
+
+@st.cache_data
+def get_catalog_data():
+    """بارگذاری کاتالوگ محصولات با فیلدهای لازم برای نمایش مشتری."""
+    return pd.read_sql_query(
+        """SELECT code, name, category, compatible_cars, sale_price, stock, min_stock
+           FROM products
+           WHERE sale_price > 0 AND stock > 0
+           ORDER BY name""",
+        engine,
+    )
+
+def refresh_caches(scope="all"):
+    """پاک‌سازی کش‌ها پس از ثبت/ویرایش داده تا گزارش‌ها و لیست‌ها هماهنگ بمانند."""
+    caches = {
+        "all": [get_staff_list, get_products_summary, get_sales_data,
+                get_expenses_data, get_vip_customers, get_catalog_data],
+        "products": [get_products_summary, get_catalog_data],
+        "sales": [get_sales_data, get_vip_customers],
+        "staff": [get_staff_list],
+        "expenses": [get_expenses_data],
+    }
+    for fn in caches.get(scope, caches["all"]):
+        try:
+            fn.clear()
+        except Exception:
+            pass
+    # ledger وابسته به آرگومان است؛ کل آن پاک می‌شود
+    if scope in ("all", "ledger"):
+        try:
+            get_ledger_data.clear()
+        except Exception:
+            pass
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
@@ -380,7 +529,7 @@ for key in ["user_role", "user_name", "last_invoice"]:
     if key not in st.session_state: st.session_state[key] = None
 for key in ["scanned_add_code", "name_s", "phone_s", "car_s", "last_search_sale", "vip_search_sale_input"]:
     if key not in st.session_state: st.session_state[key] = ""
-if "clear_sale_form" not in st.session_state: st.session_state.clear_sale_form = False
+st.session_state["clear_sale_form"] = False
 
 shop_name_display = get_setting("shop_name", "فروشگاه لوازم جانبی و اسپرت خودرو")
 st.sidebar.title(f"🚗 {shop_name_display}")
@@ -400,7 +549,7 @@ if st.session_state.user_role is None:
             else:
                 st.sidebar.error("رمز اشتباه است!")
     else:
-        staff_df = pd.read_sql_query("SELECT name FROM staff WHERE active=1 ORDER BY name", engine)
+        staff_df = get_staff_list()
         if not staff_df.empty:
             s_name = st.sidebar.selectbox("نام خود را انتخاب کنید:", staff_df['name'].tolist())
             s_pass = st.sidebar.text_input("رمز عبور خود را وارد کنید:", type="password")
@@ -447,9 +596,9 @@ if st.sidebar.button("خروج از سیستم"):
 
 menu = (
     ["🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد",
-     "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل", "⚙️ تنظیمات و پشتیبان‌گیری"]
+     "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل", "⚙️ تنظیمات و پشتیبان‌گیری", "🛍️ مشاهده کتالوگ"]
     if st.session_state.user_role == "Admin"
-    else ["🛒 ثبت فروش / خدمات", "📦 جستجو در انبار"]
+    else ["🛒 ثبت فروش / خدمات", "📦 جستجو در انبار", "🛍️ مشاهده کتالوگ"]
 )
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
@@ -615,8 +764,9 @@ if choice == "🛒 ثبت فروش / خدمات":
                     with engine.begin() as conn:
                         staff_rate = 0
                         if s_staff_srv != "ادمین (بدون پورسانت)":
-                            s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff_srv}).fetchone()
-                            if s_res: staff_rate = s_res[0]
+                            staff_list = get_staff_list()
+                            s_res = staff_list[staff_list['name'] == s_staff_srv]['commission_rate'].values
+                            if len(s_res) > 0: staff_rate = s_res[0]
 
                         conn.execute(text("""
                             INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
@@ -1045,8 +1195,8 @@ elif choice == "📊 گزارش‌ها و داشبورد":
     else:
         start_dt = iran_now - timedelta(days=3650) 
 
-    sales_df = pd.read_sql_query("SELECT * FROM sales", engine)
-    exp_df = pd.read_sql_query("SELECT * FROM expenses", engine)
+    sales_df = get_sales_data()
+    exp_df = get_expenses_data()
     
     start_ts = pd.Timestamp(start_dt)
     end_ts = pd.Timestamp(end_dt)
@@ -1160,13 +1310,7 @@ elif choice == "📒 دفتر حساب (چک‌ها)":
                 st.error("نام و مبلغ الزامی است.")
 
         show_settled = st.checkbox("نمایش موارد تسویه‌شده هم", key=f"sw_{l_type}")
-        status_clause = "" if show_settled else "AND status != 'تسویه شده'"
-        df_ledger = pd.read_sql_query(
-            text(f"""SELECT id as 'کد', person_name as '{p_label}', amount as 'مبلغ', due_date as 'سررسید',
-                            description as 'بابت', status as 'وضعیت'
-                     FROM ledger WHERE record_type=:rt {status_clause} ORDER BY id DESC"""),
-            engine, params={"rt": l_type}
-        )
+        df_ledger = get_ledger_data(l_type, p_label, show_settled)
         if not df_ledger.empty:
             st.dataframe(df_ledger, hide_index=True, use_container_width=True)
             sel_id = st.number_input(f"کد ردیف {title} جهت اقدام:", min_value=0, step=1, key=f"sel_{l_type}")
