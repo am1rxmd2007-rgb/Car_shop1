@@ -40,7 +40,7 @@ st.markdown("""
     header {background-color: transparent !important;}
 
     html, body, .stMarkdown, p, h1, h2, h3, h4, h5, label, .stSelectbox, .stTextInput,
-    .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame, span, div {
+    .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame {
         direction: rtl; text-align: right;
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
@@ -854,8 +854,8 @@ elif choice == "🛒 ثبت فروش / خدمات":
 
     with tab_refund:
         if st.session_state.user_role == "Admin":
-            st.markdown("🔍 **ابتدا کالای مرجوعی را پیدا کنید:**")
-            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method", horizontal=True)
+            st.markdown("ابتدا کالای مرجوعی را پیدا کنید:")
+            ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method")
             ref_code = ""
 
             if ref_method == "کیبورد / بارکدخوان فیزیکی":
@@ -867,7 +867,7 @@ elif choice == "🛒 ثبت فروش / خدمات":
                 else:
                     st.warning("پکیج اسکنر نصب نیست.")
             elif ref_method == "جستجوی نام کالا":
-                ref_q = st.text_input("بخشی از نام کالا را تایپ کنید:", key="ref_name")
+                ref_q = st.text_input("نام کالا:", key="ref_name")
                 if ref_q:
                     ref_df = pd.read_sql_query(
                         text("SELECT code, name FROM products WHERE name LIKE :q"),
@@ -878,21 +878,19 @@ elif choice == "🛒 ثبت فروش / خدمات":
                         picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()), key="ref_sel")
                         if picked_label:
                             ref_code = label_map[picked_label]
-                    else:
-                        st.info("کالایی یافت نشد.")
             
             if ref_code:
                 st.markdown("---")
-                st.markdown("**🧾 فاکتورهای صادر شده برای این کالا:**")
+                st.markdown("**فاکتورهای اخیر ثبت‌شده برای این کالا:**")
                 sales_of_product = pd.read_sql_query(
                     text("SELECT id, product_code, name, quantity, sale_date, customer_name, staff_name FROM sales WHERE product_code = :c ORDER BY id DESC LIMIT 20"),
                     engine, params={"c": ref_code}
                 )
                 if not sales_of_product.empty:
-                    st.dataframe(sales_of_product.rename(columns={'id': 'کد فاکتور', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
+                    st.dataframe(sales_of_product.rename(columns={'id': 'کد', 'product_code': 'کد کالا', 'name': 'شرح', 'quantity': 'تعداد', 'sale_date': 'تاریخ', 'customer_name': 'مشتری', 'staff_name': 'پرسنل'}), hide_index=True, use_container_width=True)
                     
-                    refund_id = st.number_input("کد فاکتور جهت ابطال را وارد کنید:", min_value=0, step=1)
-                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت موجودی به انبار")
+                    refund_id = st.number_input("کد ردیف فاکتور (کد) جهت ابطال را وارد کنید:", min_value=0, step=1)
+                    confirm_refund = st.checkbox("تایید ابطال فاکتور و بازگشت به انبار")
 
                     if st.button("🗑️ ابطال فاکتور", disabled=not confirm_refund, type="primary") and refund_id > 0:
                         with engine.begin() as conn:
@@ -903,9 +901,9 @@ elif choice == "🛒 ثبت فروش / خدمات":
                                 st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
                                 st.rerun()
                             else:
-                                st.error("کد فاکتور اشتباه است یا متعلق به این کالا نیست.")
+                                st.error("فاکتوری با این کد برای کالای انتخابی یافت نشد.")
                 else:
-                    st.info("هیچ فاکتوری برای این کالا ثبت نشده است.")
+                    st.info("فاکتوری برای این کالا یافت نشد.")
         else:
             st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
@@ -919,7 +917,6 @@ elif choice == "🛒 ثبت فروش / خدمات":
         shop_phone = get_setting("shop_phone", "")
         invoice_footer = get_setting("invoice_footer", "از اعتماد و خرید شما سپاسگزاریم")
 
-        # ساخت فاکتور A5 و فیش حرارتی
         pdf_buffer, has_font = generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         
