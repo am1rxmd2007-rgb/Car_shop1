@@ -29,7 +29,7 @@ except ImportError:
 # ==========================================
 # تنظیمات صفحه و استایل‌ها
 # ==========================================
-st.set_page_config(page_title="فروشگاه لوازم جانبی و اسپرت خودرو", page_icon="🚗", layout="wide")
+st.set_page_config(page_title="سیستم یکپارچه فروشگاه", page_icon="🚗", layout="wide")
 
 st.markdown("""
 <style>
@@ -39,48 +39,36 @@ st.markdown("""
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
 
-    /* حذف span و div از اینجا برای جلوگیری از تخریب کادربندی استریم‌لیت */
-    html, body, .stMarkdown, p, h1, h2, h3, h4, h5, label, .stSelectbox, .stTextInput,
-    .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame {
+    /* 🟢 استایل‌های ایمن و اصولی که کادربندی را به هم نمی‌ریزد */
+    .stMarkdown, p, h1, h2, h3, h4, h5, label, span {
         direction: rtl; text-align: right;
-    }
-    
-    /* اعمال فونت روی همه المان‌ها بدون به هم ریختن چیدمان */
-    * {
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     
     [data-testid="stSidebar"] { direction: rtl; }
-    
-    /* 🔴 حل قطعی مشکل عمودی شدن حروف در منوی سایدبار 🔴 */
-    .stRadio label p, .stRadio label {
-        white-space: nowrap !important;
-    }
 
-    /* هدر و فاصله کلی */
-    .block-container { padding-top: 2rem; padding-bottom: 2rem; max-width: 1280px; }
-
-    /* دکمه‌ها */
     .stButton>button {
-        width: 100%; border-radius: 10px; font-weight: 700;
+        width: 100%; border-radius: 10px; font-weight: bold;
         transition: all .2s ease; border: 1px solid transparent;
+        font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     .stButton>button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
 
-    /* بنر اصلی */
+    /* بنر اصلی کاتالوگ */
     .shop-hero {
         background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         border-radius: 18px; padding: 28px 32px; color: #fff; margin-bottom: 22px;
         box-shadow: 0 8px 24px rgba(15,32,39,.25);
+        direction: rtl; text-align: right;
     }
-    .shop-hero h1 { color: #fff; font-weight: 800; font-size: 1.7rem; margin-bottom: 6px; }
-    .shop-hero p { color: #cfd8dc; font-size: .95rem; margin: 0; }
+    .shop-hero h1 { color: #fff; font-weight: 800; font-size: 1.7rem; margin-bottom: 6px; font-family: 'Vazirmatn', sans-serif; }
+    .shop-hero p { color: #cfd8dc; font-size: .95rem; margin: 0; font-family: 'Vazirmatn', sans-serif;}
 
     /* کاشی آمار */
     .metric-box {
-        padding: 16px; border-radius: 12px; background: linear-gradient(135deg, #e8f5e9, #f1f8f1);
+        padding: 16px; border-radius: 12px; background: #e8f5e9;
         border: 1px solid #4CAF50; margin-bottom: 16px; text-align: center;
-        font-size: 18px; font-weight: 700; color: #2e7d32;
+        font-size: 18px; font-weight: bold; color: #2e7d32; direction: rtl;
     }
 
     /* فاکتور */
@@ -94,52 +82,35 @@ st.markdown("""
     .product-card {
         background: #fff; border: 1px solid #e3e8ee; border-radius: 14px;
         padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.05);
-        transition: all .2s ease; height: 100%;
+        transition: transform .2s ease; height: 100%;
         display: flex; flex-direction: column; justify-content: space-between;
+        direction: rtl; text-align: right;
     }
     .product-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.10); border-color: #1976d2; }
+    .product-card.low-stock { background: #fffbf2; border-color: #ff9800; }
+    .product-card.out-of-stock { background: #fff5f5; border-color: #f44336; opacity: 0.8; }
+    
     .pc-badge {
         display: inline-block; background: #1565c0; color: #fff; font-size: 11px;
-        font-weight: 700; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
+        font-weight: bold; padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
     }
     .pc-badge.out { background: #c62828; }
-    .pc-name { font-weight: 700; font-size: 15px; color: #1a2b3c; margin: 4px 0; min-height: 42px; }
-    .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; }
-    .pc-price { font-size: 17px; font-weight: 800; color: #2e7d32; margin-top: 6px; }
-    .pc-stock { font-size: 11px; color: #757575; }
+    .pc-badge.low { background: #ff9800; }
+    .pc-name { font-weight: bold; font-size: 15px; color: #1a2b3c; margin: 4px 0; font-family: 'Vazirmatn', sans-serif;}
+    .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; font-family: 'Vazirmatn', sans-serif;}
+    .pc-price { font-size: 17px; font-weight: bold; color: #2e7d32; margin-top: 6px; font-family: 'Vazirmatn', sans-serif;}
 
     /* سبد خرید ساید‌بار */
     .cart-item {
         background: #f8fafc; border: 1px solid #e3e8ee; border-radius: 10px;
         padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between;
-        align-items: center; gap: 8px;
+        align-items: center; direction: rtl; text-align: right;
     }
-    .cart-item-name { font-weight: 600; font-size: 13px; color: #33475b; }
+    .cart-item-name { font-weight: bold; font-size: 13px; color: #33475b; }
     .cart-item-qty { font-size: 12px; color: #7a8da0; }
-    .cart-item-price { font-size: 13px; font-weight: 700; color: #2e7d32; white-space: nowrap; }
-    .cart-total {
-        margin-top: 10px; padding-top: 10px; border-top: 2px dashed #4CAF50;
-        font-size: 16px; font-weight: 800; color: #1b5e20; text-align: left;
-    }
+    .cart-item-price { font-size: 13px; font-weight: bold; color: #2e7d32; }
+    .cart-total { margin-top: 10px; padding-top: 10px; border-top: 2px dashed #4CAF50; font-size: 16px; font-weight: bold; color: #1b5e20; text-align: right; }
 
-    /* هشدار موجودی کم */
-    .low-stock {
-        background: #fff3e0; border-right: 4px solid #ef6c00; padding: 10px 14px;
-        border-radius: 8px; color: #e65100; font-weight: 600; margin-bottom: 8px;
-    }
-
-    /* واکنش‌گرا (موبایل) */
-    @media (max-width: 768px) {
-        .block-container { padding-top: 1rem; padding-bottom: 2rem; }
-        .shop-hero { padding: 18px 16px; }
-        .shop-hero h1 { font-size: 1.25rem; }
-        .pc-name { min-height: auto; }
-        [data-testid="stSidebar"] { direction: rtl; }
-    }
-    /* زیر ۶۴۰px کاشی‌ها تک‌ستونی می‌شوند */
-    @media (max-width: 640px) {
-        .shop-hero h1 { font-size: 1.1rem; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -292,7 +263,6 @@ def refresh_caches(scope="all"):
             fn.clear()
         except Exception:
             pass
-    # ledger وابسته به آرگومان است؛ کل آن پاک می‌شود
     if scope in ("all", "ledger"):
         try:
             get_ledger_data.clear()
@@ -534,7 +504,7 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     return buffer
 
 # ==========================================
-# مدیریت متغیرهای State
+# مدیریت متغیرهای State (از جمله سبد خرید)
 # ==========================================
 for key in ["user_role", "user_name", "last_invoice"]:
     if key not in st.session_state: st.session_state[key] = None
