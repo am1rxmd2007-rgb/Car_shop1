@@ -39,21 +39,20 @@ st.markdown("""
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
 
-    /* جهت کل اپلیکیشن */
-    .stApp {
-        direction: rtl;
-    }
-
-    /* استایل‌های ایمن */
+    /* 🟢 هدف‌گیری دقیق متن‌ها برای راست‌چین شدن بدون تخریب سایدبار موبایل */
     .stMarkdown, p, h1, h2, h3, h4, h5, label, .stSelectbox, .stTextInput,
     .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame {
         direction: rtl; text-align: right;
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     
-    [data-testid="stSidebar"] { direction: rtl; }
+    /* 🔴 خط مخرب عرض صفر در اینجا حذف شد تا مشکل عمودی شدن متن پیش نیاید 🔴 */
     
-    /* جلوگیری قطعی از عمودی شدن متن در منوها */
+    /* 🟢 جلوگیری قطعی و ریشه‌ای از شکسته شدن و عمودی شدن کلمات در منوها و هدر سایدبار */
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        white-space: nowrap !important;
+        overflow: visible !important;
+    }
     .stRadio label p, .stRadio label, .stSelectbox label p {
         white-space: nowrap !important;
     }
@@ -114,6 +113,17 @@ st.markdown("""
     .pc-name { font-weight: bold; font-size: 15px; color: #1a2b3c; margin: 4px 0; font-family: 'Vazirmatn', sans-serif;}
     .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; font-family: 'Vazirmatn', sans-serif;}
     .pc-price { font-size: 17px; font-weight: bold; color: #2e7d32; margin-top: 6px; font-family: 'Vazirmatn', sans-serif;}
+
+    /* سبد خرید ساید‌بار */
+    .cart-item {
+        background: #f8fafc; border: 1px solid #e3e8ee; border-radius: 10px;
+        padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between;
+        align-items: center; direction: rtl; text-align: right;
+    }
+    .cart-item-name { font-weight: bold; font-size: 13px; color: #33475b; }
+    .cart-item-qty { font-size: 12px; color: #7a8da0; }
+    .cart-item-price { font-size: 13px; font-weight: bold; color: #2e7d32; }
+    .cart-total { margin-top: 10px; padding-top: 10px; border-top: 2px dashed #4CAF50; font-size: 16px; font-weight: bold; color: #1b5e20; text-align: right; }
 
     /* واکنش‌گرا (موبایل) */
     @media (max-width: 768px) {
@@ -249,24 +259,35 @@ def get_vip_customers():
 
 @st.cache_data
 def get_catalog_data():
+    """بارگذاری کاتالوگ محصولات با فیلدهای لازم برای نمایش مشتری."""
     return pd.read_sql_query(
         """SELECT code, name, category, compatible_cars, sale_price, stock, min_stock
-           FROM products WHERE sale_price > 0 AND stock > 0 ORDER BY name""", engine)
+           FROM products
+           WHERE sale_price > 0 AND stock > 0
+           ORDER BY name""",
+        engine,
+    )
 
 def refresh_caches(scope="all"):
+    """پاک‌سازی کش‌ها پس از ثبت/ویرایش داده تا گزارش‌ها و لیست‌ها هماهنگ بمانند."""
     caches = {
-        "all": [get_staff_list, get_products_summary, get_sales_data, get_expenses_data, get_vip_customers, get_catalog_data],
+        "all": [get_staff_list, get_products_summary, get_sales_data,
+                get_expenses_data, get_vip_customers, get_catalog_data],
         "products": [get_products_summary, get_catalog_data],
-        "sales": [get_sales_data, get_vip_customers, get_products_summary, get_catalog_data],
+        "sales": [get_sales_data, get_vip_customers],
         "staff": [get_staff_list],
         "expenses": [get_expenses_data],
     }
     for fn in caches.get(scope, caches["all"]):
-        try: fn.clear()
-        except: pass
+        try:
+            fn.clear()
+        except Exception:
+            pass
     if scope in ("all", "ledger"):
-        try: get_ledger_data.clear()
-        except: pass
+        try:
+            get_ledger_data.clear()
+        except Exception:
+            pass
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
@@ -447,7 +468,6 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
 def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
     items = inv.get('items', [])
     num_items = len(items) if items else 1
-    # ارتفاع متغیر بر اساس تعداد اقلام
     page_height = (130 + (num_items * 10)) * mm
     page_width = 80 * mm
     
@@ -508,7 +528,7 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
             draw_rtl_text(f"{item['name']}", right_x, y, size=9)
             y -= 12
             draw_rtl_text(f"{item['qty']} x {item['price']:,.0f}", right_x - 5, y, size=8)
-            draw_rtl_text(f"{item['total']:,.0f}", 15, y, size=8, align="left") # Use low X for left alignment visually
+            draw_rtl_text(f"{item['total']:,.0f}", 15, y, size=8, align="left")
             y -= 15
     else:
         draw_rtl_text(f"{inv['p_name']}", right_x, y, size=9)
