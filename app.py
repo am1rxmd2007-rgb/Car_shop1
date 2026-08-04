@@ -46,7 +46,8 @@ st.markdown("""
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     
-    /* 🔴 خط مخرب عرض صفر در اینجا حذف شد تا مشکل عمودی شدن متن پیش نیاید 🔴 */
+    /* راست‌چین کردن محتوای داخلی سایدبار */
+    [data-testid="stSidebar"] { direction: rtl; }
     
     /* 🟢 جلوگیری قطعی و ریشه‌ای از شکسته شدن و عمودی شدن کلمات در منوها و هدر سایدبار */
     [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
@@ -384,7 +385,7 @@ def build_full_backup():
     return output.getvalue()
 
 # ==========================================
-# تولید فاکتور PDF چندقلمی
+# تولید فاکتور PDF 
 # ==========================================
 def register_persian_font():
     for path in PERSIAN_FONT_CANDIDATES:
@@ -438,7 +439,6 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
             draw_rtl_text(f"{item['total']:,.0f} تومان", 110, y, size=10)
             y -= 20
     else:
-        # Fallback برای فاکتورهای قدیمی و تکی
         draw_rtl_text(f"شرح: {inv['p_name']} ({inv['qty']} عدد)", width - 30, y)
         draw_rtl_text(f"{inv['total']:,.0f} تومان", 110, y)
         y -= 20
@@ -784,7 +784,7 @@ if choice == "🛒 فروشگاه و صندوق":
                     st.session_state.cart_items.pop(idx)
                     st.rerun()
             
-            cart_total = sum(i['total'] for i in st.session_state.cart_items)
+            cart_total = int(sum(i['total'] for i in st.session_state.cart_items))
             st.markdown(f"**جمع مبلغ اقلام:** {cart_total:,.0f} تومان")
             st.markdown("---")
 
@@ -816,7 +816,8 @@ if choice == "🛒 فروشگاه و صندوق":
             with ci1:
                 f_install = st.number_input("اجرت نصب کلی (تومان) - روی کل فاکتور", min_value=0, step=10000, value=0)
             with ci2:
-                f_discount = st.number_input("تخفیف کلی (تومان) - روی کل فاکتور", min_value=0, max_value=cart_total+f_install, step=10000, value=0)
+                max_discount = int(cart_total + f_install)
+                f_discount = st.number_input("تخفیف کلی (تومان) - روی کل فاکتور", min_value=0, max_value=max_discount if max_discount > 0 else None, step=10000, value=0)
 
             s_staff = st.selectbox("👷‍♂️ ثبت به نام پرسنل:", staff_options) if st.session_state.user_role == "Admin" else st.session_state.user_name
 
