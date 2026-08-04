@@ -39,17 +39,21 @@ st.markdown("""
     footer {visibility: hidden;}
     header {background-color: transparent !important;}
 
-    /* 🟢 هدف‌گیری دقیق متن‌ها برای راست‌چین شدن بدون تخریب سایدبار و بدون خراب کردن آیکون‌ها */
+    /* جهت کل اپلیکیشن */
+    .stApp {
+        direction: rtl;
+    }
+
+    /* استایل‌های ایمن */
     .stMarkdown, p, h1, h2, h3, h4, h5, label, .stSelectbox, .stTextInput,
     .stNumberInput, .stTabs, .stAlert, .stCaption, .stForm, .stDataFrame {
         direction: rtl; text-align: right;
         font-family: 'Vazirmatn', 'Tahoma', sans-serif !important;
     }
     
-    /* راست‌چین کردن محتوای داخلی سایدبار */
     [data-testid="stSidebar"] { direction: rtl; }
     
-    /* 🟢 جلوگیری قطعی از عمودی شدن متن در منوها */
+    /* جلوگیری قطعی از عمودی شدن متن در منوها */
     .stRadio label p, .stRadio label, .stSelectbox label p {
         white-space: nowrap !important;
     }
@@ -110,17 +114,6 @@ st.markdown("""
     .pc-name { font-weight: bold; font-size: 15px; color: #1a2b3c; margin: 4px 0; font-family: 'Vazirmatn', sans-serif;}
     .pc-meta { font-size: 12px; color: #607d8b; margin-bottom: 8px; font-family: 'Vazirmatn', sans-serif;}
     .pc-price { font-size: 17px; font-weight: bold; color: #2e7d32; margin-top: 6px; font-family: 'Vazirmatn', sans-serif;}
-
-    /* سبد خرید ساید‌بار */
-    .cart-item {
-        background: #f8fafc; border: 1px solid #e3e8ee; border-radius: 10px;
-        padding: 10px 12px; margin-bottom: 8px; display: flex; justify-content: space-between;
-        align-items: center; direction: rtl; text-align: right;
-    }
-    .cart-item-name { font-weight: bold; font-size: 13px; color: #33475b; }
-    .cart-item-qty { font-size: 12px; color: #7a8da0; }
-    .cart-item-price { font-size: 13px; font-weight: bold; color: #2e7d32; }
-    .cart-total { margin-top: 10px; padding-top: 10px; border-top: 2px dashed #4CAF50; font-size: 16px; font-weight: bold; color: #1b5e20; text-align: right; }
 
     /* واکنش‌گرا (موبایل) */
     @media (max-width: 768px) {
@@ -256,35 +249,24 @@ def get_vip_customers():
 
 @st.cache_data
 def get_catalog_data():
-    """بارگذاری کاتالوگ محصولات با فیلدهای لازم برای نمایش مشتری."""
     return pd.read_sql_query(
         """SELECT code, name, category, compatible_cars, sale_price, stock, min_stock
-           FROM products
-           WHERE sale_price > 0 AND stock > 0
-           ORDER BY name""",
-        engine,
-    )
+           FROM products WHERE sale_price > 0 AND stock > 0 ORDER BY name""", engine)
 
 def refresh_caches(scope="all"):
-    """پاک‌سازی کش‌ها پس از ثبت/ویرایش داده تا گزارش‌ها و لیست‌ها هماهنگ بمانند."""
     caches = {
-        "all": [get_staff_list, get_products_summary, get_sales_data,
-                get_expenses_data, get_vip_customers, get_catalog_data],
+        "all": [get_staff_list, get_products_summary, get_sales_data, get_expenses_data, get_vip_customers, get_catalog_data],
         "products": [get_products_summary, get_catalog_data],
-        "sales": [get_sales_data, get_vip_customers],
+        "sales": [get_sales_data, get_vip_customers, get_products_summary, get_catalog_data],
         "staff": [get_staff_list],
         "expenses": [get_expenses_data],
     }
     for fn in caches.get(scope, caches["all"]):
-        try:
-            fn.clear()
-        except Exception:
-            pass
+        try: fn.clear()
+        except: pass
     if scope in ("all", "ledger"):
-        try:
-            get_ledger_data.clear()
-        except Exception:
-            pass
+        try: get_ledger_data.clear()
+        except: pass
 
 def init_db():
     is_pg = 'postgresql' in engine.dialect.name
@@ -381,7 +363,7 @@ def build_full_backup():
     return output.getvalue()
 
 # ==========================================
-# تولید فاکتور PDF 
+# تولید فاکتور PDF چندقلمی
 # ==========================================
 def register_persian_font():
     for path in PERSIAN_FONT_CANDIDATES:
@@ -426,17 +408,35 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
     c.line(30, y - 55, width - 30, y - 55)
 
     y -= 75
-    draw_rtl_text(f"شرح کالا / خدمات: {inv['p_name']}", width - 30, y)
-    draw_rtl_text(f"تعداد: {inv['qty']} عدد", width - 30, y - 20)
-    draw_rtl_text(f"قیمت واحد: {inv['price']:,.0f} تومان", width - 30, y - 40)
-    draw_rtl_text(f"اجرت نصب: {inv['install']:,.0f} تومان", width - 30, y - 60)
-    extra = 0
-    if inv['discount'] > 0:
-        draw_rtl_text(f"تخفیف: {inv['discount']:,.0f} تومان", width - 30, y - 80)
-        extra = 20
+    draw_rtl_text("اقلام فاکتور:", width - 30, y, font=bold_font, size=11)
+    y -= 20
+    
+    if 'items' in inv and inv['items']:
+        for item in inv['items']:
+            draw_rtl_text(f"- {item['name']} ({item['qty']} عدد)", width - 30, y, size=10)
+            draw_rtl_text(f"{item['total']:,.0f} تومان", 110, y, size=10)
+            y -= 20
+    else:
+        # Fallback برای فاکتورهای قدیمی و تکی
+        draw_rtl_text(f"شرح: {inv['p_name']} ({inv['qty']} عدد)", width - 30, y)
+        draw_rtl_text(f"{inv['total']:,.0f} تومان", 110, y)
+        y -= 20
 
-    c.line(30, y - 75 - extra, width - 30, y - 75 - extra)
-    draw_rtl_text(f"جمع کل پرداختی: {inv['total']:,.0f} تومان", width - 30, y - 100 - extra, font=bold_font, size=12)
+    c.line(30, y, width - 30, y)
+    y -= 20
+
+    if inv.get('install', 0) > 0:
+        draw_rtl_text(f"اجرت نصب کلی:", width - 30, y)
+        draw_rtl_text(f"{inv['install']:,.0f} تومان", 110, y)
+        y -= 20
+    if inv.get('discount', 0) > 0:
+        draw_rtl_text(f"تخفیف کلی:", width - 30, y)
+        draw_rtl_text(f"{inv['discount']:,.0f} تومان", 110, y)
+        y -= 20
+
+    c.line(30, y, width - 30, y)
+    y -= 25
+    draw_rtl_text(f"جمع کل پرداختی: {inv['total']:,.0f} تومان", width - 30, y, font=bold_font, size=12)
 
     draw_rtl_text(footer_text or "از اعتماد و خرید شما سپاسگزاریم", width / 2 + 50, 30, size=9)
 
@@ -445,8 +445,12 @@ def generate_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
     return buffer, has_font
 
 def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, footer_text):
+    items = inv.get('items', [])
+    num_items = len(items) if items else 1
+    # ارتفاع متغیر بر اساس تعداد اقلام
+    page_height = (130 + (num_items * 10)) * mm
     page_width = 80 * mm
-    page_height = 150 * mm
+    
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=(page_width, page_height))
     
@@ -472,8 +476,9 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     center_x = page_width / 2
     right_x = page_width - 15
 
-    draw_rtl_text(shop_name, center_x, page_height - 20, font=bold_font, size=12, align="center")
-    y = page_height - 35
+    y = page_height - 20
+    draw_rtl_text(shop_name, center_x, y, font=bold_font, size=12, align="center")
+    y -= 15
     if shop_phone:
         draw_rtl_text(f"تلفن: {shop_phone}", center_x, y, size=8, align="center")
         y -= 15
@@ -495,16 +500,30 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     c.setDash()
     y -= 15
 
-    draw_rtl_text(f"شرح: {inv['p_name']}", right_x, y, font=bold_font, size=9)
-    y -= 14
-    draw_rtl_text(f"تعداد: {inv['qty']} عدد x {inv['price']:,.0f}", right_x, y, size=9)
-    y -= 12
-    if inv['install'] > 0:
-        draw_rtl_text(f"اجرت نصب: {inv['install']:,.0f}", right_x, y, size=9)
+    draw_rtl_text("اقلام فاکتور:", right_x, y, font=bold_font, size=10)
+    y -= 15
+    
+    if items:
+        for item in items:
+            draw_rtl_text(f"{item['name']}", right_x, y, size=9)
+            y -= 12
+            draw_rtl_text(f"{item['qty']} x {item['price']:,.0f}", right_x - 5, y, size=8)
+            draw_rtl_text(f"{item['total']:,.0f}", 15, y, size=8, align="left") # Use low X for left alignment visually
+            y -= 15
+    else:
+        draw_rtl_text(f"{inv['p_name']}", right_x, y, size=9)
         y -= 12
-    if inv['discount'] > 0:
-        draw_rtl_text(f"تخفیف: {inv['discount']:,.0f}", right_x, y, size=9)
-        y -= 12
+        draw_rtl_text(f"{inv['qty']} x {inv['price']:,.0f}", right_x - 5, y, size=8)
+        y -= 15
+
+    if inv.get('install', 0) > 0:
+        draw_rtl_text("اجرت نصب کلی:", right_x, y, size=9)
+        draw_rtl_text(f"{inv['install']:,.0f}", 15, y, size=9, align="left")
+        y -= 15
+    if inv.get('discount', 0) > 0:
+        draw_rtl_text("تخفیف:", right_x, y, size=9)
+        draw_rtl_text(f"{inv['discount']:,.0f}", 15, y, size=9, align="left")
+        y -= 15
 
     c.setDash(2, 2)
     c.line(15, y, page_width - 15, y)
@@ -521,13 +540,12 @@ def generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, foote
     return buffer
 
 # ==========================================
-# مدیریت متغیرهای State (از جمله سبد خرید)
+# مدیریت متغیرهای State (سبد خرید)
 # ==========================================
 for key in ["user_role", "user_name", "last_invoice"]:
     if key not in st.session_state: st.session_state[key] = None
-for key in ["scanned_add_code", "name_s", "phone_s", "car_s", "last_search_sale", "vip_search_sale_input"]:
+for key in ["scanned_add_code", "pos_vip_search", "pos_name", "pos_phone", "pos_car"]:
     if key not in st.session_state: st.session_state[key] = ""
-if "clear_sale_form" not in st.session_state: st.session_state.clear_sale_form = False
 if "cart_items" not in st.session_state: st.session_state.cart_items = []
 
 shop_name_display = get_setting("shop_name", "فروشگاه لوازم جانبی خودرو")
@@ -598,331 +616,261 @@ if st.sidebar.button("خروج از سیستم"):
     st.rerun()
 
 menu = (
-    ["🛍️ مشاهده کاتالوگ", "🛒 ثبت فروش / خدمات", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد",
+    ["🛒 فروشگاه و صندوق", "📦 مدیریت انبار", "➕ افزودن کالا", "📊 گزارش‌ها و داشبورد",
      "📒 دفتر حساب (چک‌ها)", "👥 مدیریت پرسنل", "⚙️ تنظیمات و پشتیبان‌گیری"]
     if st.session_state.user_role == "Admin"
-    else ["🛍️ مشاهده کاتالوگ", "🛒 ثبت فروش / خدمات", "📦 جستجو در انبار"]
+    else ["🛒 فروشگاه و صندوق", "📦 جستجو در انبار"]
 )
 choice = st.sidebar.radio("منوی اختصاصی شما:", menu)
 
 # ==========================================
-# سیستم سبد خرید سایدبار
+# 1. بخش یکپارچه: فروشگاه و صندوق (POS)
 # ==========================================
-if st.session_state.get('cart_items'):
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🛒 سبد خرید شما")
-    cart_total = sum(item['total'] for item in st.session_state.cart_items)
-    
-    for idx, item in enumerate(st.session_state.cart_items):
-        st.sidebar.markdown(f"""
-        <div class="cart-item">
-            <div>
-                <div class="cart-item-name">{item['name']}</div>
-                <div class="cart-item-qty">{item['qty']} عدد</div>
-            </div>
-            <div class="cart-item-price">{item['total']:,.0f} T</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.sidebar.button("❌ حذف", key=f"rm_cart_{item['code']}_{idx}"):
-            st.session_state.cart_items.remove(item)
-            st.rerun()
-
-    st.sidebar.markdown(f"<div class='cart-total'>جمع کل: {cart_total:,.0f} تومان</div>", unsafe_allow_html=True)
-    
-    if st.sidebar.button("🚀 تسویه و ثبت فروش", type="primary", use_container_width=True):
-        now_dt = iran_naive()
-        now_str = jalali_str(now_dt)
-        staff_name = st.session_state.user_name if st.session_state.user_role == "Staff" else "ادمین (بدون پورسانت)"
-        
-        try:
-            with engine.begin() as conn:
-                staff_rate = 0
-                if staff_name != "ادمین (بدون پورسانت)":
-                    s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": staff_name}).fetchone()
-                    if s_res: staff_rate = s_res[0]
-
-                for item in st.session_state.cart_items:
-                    # چک موجودی
-                    curr_stock = conn.execute(text("SELECT stock, purchase_price FROM products WHERE code=:c"), {"c": item['code']}).fetchone()
-                    if curr_stock is None or curr_stock[0] < item['qty']:
-                        raise Exception(f"موجودی کالای {item['name']} کافی نیست!")
-                    
-                    purch_price = curr_stock[1]
-                    net_prof = (item['price'] - purch_price) * item['qty']
-                    
-                    # کسر از انبار
-                    conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c"), {"q": item['qty'], "c": item['code']})
-                    
-                    # ثبت فاکتور
-                    conn.execute(text("""
-                        INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp,
-                        customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
-                        VALUES (:pc, :n, :q, :sp, :sd, :ts, :cn, :cp, :cm, :i, :np, :sn, :sc, :d)
-                    """), {
-                        "pc": item['code'], "n": item['name'], "q": item['qty'], "sp": item['price'], "sd": now_str,
-                        "ts": str(now_dt), "cn": "مشتری نقدی (کاتالوگ)", "cp": "", "cm": "عمومی",
-                        "i": 0, "np": net_prof, "sn": staff_name,
-                        "sc": float(net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": 0
-                    })
-            
-            st.session_state.cart_items = []
-            refresh_caches("all")
-            st.toast("✅ خرید با موفقیت ثبت و از انبار کسر شد!", icon="🛒")
-            st.rerun()
-        except Exception as e:
-            st.sidebar.error(str(e))
-
-# ==========================================
-# 0. صفحه کاتالوگ (ویترین محصولات)
-# ==========================================
-if choice == "🛍️ مشاهده کاتالوگ":
+if choice == "🛒 فروشگاه و صندوق":
     st.markdown(f'''
     <div class="shop-hero">
         <h1>{shop_name_display}</h1>
-        <p>مرور و انتخاب سریع کالاها جهت افزودن به سبد خرید</p>
+        <p>سیستم یکپارچه جستجوی کالا، ثبت خدمات و صدور فاکتور چندقلمی</p>
     </div>
     ''', unsafe_allow_html=True)
-
-    catalog_df = get_catalog_data()
-    
-    if catalog_df.empty:
-        st.info("هنوز کالایی در انبار وجود ندارد.")
-    else:
-        cat_search = st.text_input("🔍 جستجوی سریع در کاتالوگ (نام کالا، دسته‌بندی یا ماشین):")
-        if cat_search:
-            mask = catalog_df.apply(lambda row: row.astype(str).str.contains(cat_search, case=False).any(), axis=1)
-            catalog_df = catalog_df[mask]
-
-        st.markdown(f"### 📦 محصولات ({len(catalog_df)} قلم)")
-        cols = st.columns(3)
-        for idx, row in catalog_df.iterrows():
-            col = cols[idx % 3]
-            with col:
-                low_stock = row['stock'] <= row['min_stock']
-                out_of_stock = row['stock'] <= 0
-                
-                discount_class = "out-of-stock" if out_of_stock else ("low-stock" if low_stock else "")
-                badge_class = "out" if out_of_stock else ("low" if low_stock else "")
-                badge_text = "ناموجود" if out_of_stock else ("موجودی کم" if low_stock else "موجود")
-                
-                card_html = f"""
-                <div class="product-card {discount_class}">
-                    <div class="pc-badge {badge_class}">{badge_text} ({row['stock']} عدد)</div>
-                    <div class="pc-name">{row['name']}</div>
-                    <div class="pc-meta">{row['category']} – مناسب: {row['compatible_cars']}</div>
-                    <div class="pc-price">{row['sale_price']:,.0f} تومان</div>
-                </div>
-                """
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                if st.button("🛒 افزودن به سبد", key=f"add_{row['code']}", disabled=out_of_stock, use_container_width=True):
-                    existing = next((i for i in st.session_state.cart_items if i['code'] == row['code']), None)
-                    if existing:
-                        if existing['qty'] < row['stock']:
-                            existing['qty'] += 1
-                            existing['total'] = existing['qty'] * existing['price']
-                            st.toast("تعداد کالا در سبد افزایش یافت!", icon="✅")
-                        else:
-                            st.toast("موجودی انبار کافی نیست!", icon="❌")
-                    else:
-                        st.session_state.cart_items.append({
-                            'code': row['code'],
-                            'name': row['name'],
-                            'qty': 1,
-                            'price': row['sale_price'],
-                            'total': row['sale_price']
-                        })
-                        st.toast(f"{row['name']} به سبد اضافه شد!", icon="✅")
-                    st.rerun()
-
-
-# ==========================================
-# 1. ثبت فروش، خدمات و مرجوعی
-# ==========================================
-elif choice == "🛒 ثبت فروش / خدمات":
-    st.header("🛒 ثبت فاکتور مشتری")
 
     staff_df_list = get_staff_list()
     vip_df = get_vip_customers()
     staff_options = ["ادمین (بدون پورسانت)"] + staff_df_list['name'].tolist()
 
-    tab_sale, tab_service, tab_refund = st.tabs(["🛒 فروش قطعه و کالا", "🔧 ثبت خدمات (بدون کالا)", "🔄 مرجوعی کالا"])
+    tab_prod, tab_srv, tab_cart, tab_ref = st.tabs([
+        "🛍️ کاتالوگ و محصولات", 
+        "🔧 افزودن خدمات", 
+        f"💳 سبد خرید و تسویه ({len(st.session_state.cart_items)})", 
+        "🔄 ابطال و مرجوعی"
+    ])
 
-    with tab_sale:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            scan_method = st.radio("روش جستجو:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"))
-            code_input = ""
-            if scan_method == "کیبورد / بارکدخوان فیزیکی":
-                code_input = st.text_input("کد کالا را وارد/اسکن کنید:")
-            elif scan_method == "دوربین (اسکنر خودکار)":
-                if HAS_SCANNER_PKG:
-                    scanned_code = qrcode_scanner(key='pro_scanner_sale')
-                    if scanned_code: code_input = scanned_code
-                else:
-                    st.warning("پکیج اسکنر نصب نیست.")
-            elif scan_method == "جستجوی نام کالا":
-                search_q = st.text_input("نام کالا یا ماشین:")
-                if search_q:
-                    like_q = f"%{search_q}%"
-                    m_df = pd.read_sql_query(
-                        text("SELECT code, name, compatible_cars FROM products WHERE name LIKE :q OR compatible_cars LIKE :q"),
-                        engine, params={"q": like_q}
-                    )
-                    if not m_df.empty:
-                        label_map = {f"{r['name']} (مناسب: {r['compatible_cars']}) - کد: {r['code']}": r['code'] for _, r in m_df.iterrows()}
-                        picked_label = st.selectbox("انتخاب کالا:", list(label_map.keys()))
-                        code_input = label_map[picked_label]
+    # ------------------ تب محصولات ------------------
+    with tab_prod:
+        st.markdown("**افزودن سریع به فاکتور:**")
+        scan_method = st.radio("روش یافتن کالا:", ("انتخاب از لیست کاتالوگ (پایین)", "کیبورد / بارکدخوان فیزیکی", "دوربین موبایل (اسکنر)"), horizontal=True)
+        picked_code = None
+        
+        if scan_method == "کیبورد / بارکدخوان فیزیکی":
+            bc = st.text_input("بارکد کالا را وارد کنید:")
+            if bc: picked_code = bc
+        elif scan_method == "دوربین موبایل (اسکنر)":
+            if HAS_SCANNER_PKG:
+                sc = qrcode_scanner(key='pos_scanner')
+                if sc: picked_code = sc
+            else:
+                st.warning("پکیج اسکنر نصب نیست.")
+                
+        if picked_code:
+            with engine.connect() as conn:
+                p = conn.execute(text("SELECT * FROM products WHERE code=:c"), {"c": picked_code}).mappings().fetchone()
+            if p:
+                if p['stock'] > 0:
+                    existing = next((i for i in st.session_state.cart_items if i['code'] == p['code']), None)
+                    if existing:
+                        if existing['qty'] < p['stock']:
+                            existing['qty'] += 1
+                            existing['total'] = existing['qty'] * existing['price']
+                            st.success("تعداد کالا در سبد افزایش یافت!")
+                        else:
+                            st.error("موجودی انبار کافی نیست!")
                     else:
-                        st.info("کالایی یافت نشد.")
-
-        with col2:
-            if code_input:
-                with engine.connect() as conn:
-                    product = conn.execute(text("SELECT * FROM products WHERE code=:c"), {"c": code_input}).mappings().fetchone()
-
-                if not product:
-                    st.error("کالایی با این کد یافت نشد.")
-                elif product['stock'] <= 0:
-                    st.warning(f"⚠️ «{product['name']}» در حال حاضر در انبار موجود نیست.")
+                        st.session_state.cart_items.append({
+                            'code': p['code'], 'name': p['name'], 'qty': 1, 
+                            'price': p['sale_price'], 'total': p['sale_price']
+                        })
+                        st.success(f"{p['name']} به فاکتور اضافه شد!")
                 else:
-                    st.subheader(f"📦 {product['name']}")
-                    st.markdown(f"**قیمت فروش:** {product['sale_price']:,.0f} تومان | **موجودی:** {product['stock']} عدد")
+                    st.error("⚠️ کالا ناموجود است!")
+            else:
+                st.error("❌ کد کالا نامعتبر است.")
 
-                    f_qty = st.number_input("تعداد", min_value=1, max_value=int(product['stock']))
+        st.markdown("---")
+        catalog_df = get_catalog_data()
+        if catalog_df.empty:
+            st.info("کالای موجودی در انبار وجود ندارد.")
+        elif scan_method == "انتخاب از لیست کاتالوگ (پایین)":
+            cat_search = st.text_input("🔍 جستجوی متنی در کاتالوگ (نام، دسته یا ماشین):")
+            if cat_search:
+                mask = catalog_df.apply(lambda row: row.astype(str).str.contains(cat_search, case=False).any(), axis=1)
+                catalog_df = catalog_df[mask]
 
-                    f_install = st.number_input("اجرت نصب (تومان)", min_value=0, step=10000, value=0)
-                    show_toman_hint(f_install)
-
-                    max_discount = int((product['sale_price'] * f_qty) + f_install)
-                    f_discount = st.number_input("مبلغ تخفیف (تومان)", min_value=0, max_value=max_discount, step=10000, value=0)
-                    show_toman_hint(f_discount, color="#d32f2f", label="معادل تخفیف")
-
-                    s_staff = st.selectbox("👷‍♂️ ثبت به نام:", staff_options) if st.session_state.user_role == "Admin" else st.session_state.user_name
-
-                    st.markdown("🔍 **تکمیل اطلاعات مشتری**")
-                    if st.session_state.get('clear_sale_form'):
-                        st.session_state["name_s"] = ""; st.session_state["phone_s"] = ""
-                        st.session_state.last_search_sale = ""; st.session_state["vip_search_sale_input"] = ""
-                        st.session_state['clear_sale_form'] = False
-
-                    vip_search_q = st.text_input("⌨️ نام یا موبایل مشتری قدیمی (جستجو):", key="vip_search_sale_input")
-                    if vip_search_q and vip_search_q != st.session_state.last_search_sale:
-                        st.session_state.last_search_sale = vip_search_q
-                        if not vip_df.empty:
-                            match = vip_df[
-                                vip_df['customer_phone'].astype(str).str.contains(vip_search_q, case=False, na=False) |
-                                vip_df['customer_name'].astype(str).str.contains(vip_search_q, case=False, na=False)
-                            ]
-                            if not match.empty:
-                                st.session_state["name_s"] = str(match.iloc[0]['customer_name'])
-                                st.session_state["phone_s"] = str(match.iloc[0]['customer_phone'])
-
-                    cc1, cc2 = st.columns(2)
-                    with cc1: c_name = st.text_input("نام مشتری", key="name_s")
-                    with cc2:
-                        c_phone = st.text_input("موبایل", key="phone_s")
-                        mobile_hint(c_phone)
-
-                    car_opt = st.selectbox("مدل ماشین", CAR_MODELS + ["سایر (تایپ دستی)"])
-                    c_car = st.text_input("لطفاً نام خودرو را وارد کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
-
-                    if st.button("✅ ثبت نهایی فاکتور کالا", use_container_width=True):
-                        now_dt = iran_naive()
-                        now_str = jalali_str(now_dt)
-                        net_prof = ((product['sale_price'] - product['purchase_price']) * f_qty) + f_install - f_discount
-                        total_bill = (product['sale_price'] * f_qty) + f_install - f_discount
-
-                        try:
-                            with engine.begin() as conn:
-                                curr_stock = conn.execute(text("SELECT stock FROM products WHERE code=:c"), {"c": code_input}).scalar()
-                                if curr_stock is None or curr_stock < f_qty:
-                                    raise Exception("Insufficient_Stock")
-
-                                conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c"), {"q": f_qty, "c": code_input})
-                                
-                                staff_rate = 0
-                                if s_staff != "ادمین (بدون پورسانت)":
-                                    s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff}).fetchone()
-                                    if s_res: staff_rate = s_res[0]
-
-                                conn.execute(text("""
-                                    INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp,
-                                    customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
-                                    VALUES (:pc, :n, :q, :sp, :sd, :ts, :cn, :cp, :cm, :i, :np, :sn, :sc, :d)
-                                """), {
-                                    "pc": code_input, "n": product['name'], "q": f_qty, "sp": product['sale_price'], "sd": now_str,
-                                    "ts": str(now_dt), "cn": c_name, "cp": c_phone, "cm": c_car,
-                                    "i": f_install, "np": net_prof, "sn": s_staff,
-                                    "sc": float(net_prof * (staff_rate / 100) if net_prof > 0 else 0), "d": f_discount
-                                })
-
-                            st.session_state.last_invoice = {
-                                "date": now_str, "c_name": c_name or "نقدی", "c_phone": c_phone, "c_car": c_car,
-                                "p_name": product['name'], "qty": f_qty, "price": product['sale_price'],
-                                "install": f_install, "discount": f_discount, "total": total_bill, "staff": s_staff
-                            }
-                            st.session_state['clear_sale_form'] = True
-                            refresh_caches("all")
-                            st.success("فروش با موفقیت ثبت شد و از انبار کسر گردید!")
-                            st.rerun()
-
-                        except Exception as e:
-                            if "Insufficient_Stock" in str(e):
-                                st.error("موجودی کافی نیست! (احتمالاً هم‌زمان توسط شخص دیگری فروخته شده)")
+            st.markdown(f"### 📦 محصولات ({len(catalog_df)} قلم)")
+            cols = st.columns(3)
+            for idx, row in catalog_df.iterrows():
+                col = cols[idx % 3]
+                with col:
+                    low_stock = row['stock'] <= row['min_stock']
+                    discount_class = "low-stock" if low_stock else ""
+                    badge_class = "low" if low_stock else ""
+                    badge_text = "موجودی کم" if low_stock else "موجود"
+                    
+                    card_html = f"""
+                    <div class="product-card {discount_class}">
+                        <div class="pc-badge {badge_class}">{badge_text} ({row['stock']} عدد)</div>
+                        <div class="pc-name">{row['name']}</div>
+                        <div class="pc-meta">{row['category']} – مناسب: {row['compatible_cars']}</div>
+                        <div class="pc-price">{row['sale_price']:,.0f} تومان</div>
+                    </div>
+                    """
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    
+                    if st.button("🛒 افزودن به فاکتور", key=f"add_cat_{row['code']}", use_container_width=True):
+                        existing = next((i for i in st.session_state.cart_items if i['code'] == row['code']), None)
+                        if existing:
+                            if existing['qty'] < row['stock']:
+                                existing['qty'] += 1
+                                existing['total'] = existing['qty'] * existing['price']
+                                st.toast("تعداد کالا در فاکتور افزایش یافت!", icon="✅")
                             else:
-                                st.error(f"خطا در ثبت فروش: {e}")
+                                st.toast("موجودی انبار کافی نیست!", icon="❌")
+                        else:
+                            st.session_state.cart_items.append({
+                                'code': row['code'], 'name': row['name'], 'qty': 1,
+                                'price': row['sale_price'], 'total': row['sale_price']
+                            })
+                            st.toast(f"{row['name']} به فاکتور اضافه شد!", icon="✅")
+                        st.rerun()
 
-    with tab_service:
-        s_name = st.text_input("شرح خدمات (مثال: نصب سیستم صوتی)")
-
+    # ------------------ تب خدمات ------------------
+    with tab_srv:
+        st.markdown("### 🔧 افزودن خدمات و اجرت (بدون کالا)")
+        s_name = st.text_input("شرح خدمات (مثال: تعمیر ضبط یا نصب سیستم)")
         s_fee = st.number_input("مبلغ اجرت (تومان)", min_value=0, step=50000)
         show_toman_hint(s_fee)
-
-        s_staff_srv = st.selectbox("👷‍♂️ ثبت به نام نصاب:", staff_options, key="staff_srv") if st.session_state.user_role == "Admin" else st.session_state.user_name
-
-        sc1, sc2 = st.columns(2)
-        with sc1: s_cname = st.text_input("نام مشتری", key="name_srv_s")
-        with sc2:
-            s_cphone = st.text_input("شماره موبایل", key="phone_srv_s")
-            mobile_hint(s_cphone)
-
-        car_opt_srv = st.selectbox("مدل خودرو", CAR_MODELS + ["سایر (تایپ دستی)"], key="car_srv_opt")
-        s_ccar = st.text_input("لطفاً نام خودرو را وارد کنید:", key="car_srv_txt") if car_opt_srv == "سایر (تایپ دستی)" else car_opt_srv
-
-        if st.button("🔧 ثبت خدمات", use_container_width=True):
+        
+        if st.button("➕ افزودن خدمت به فاکتور فعلی", use_container_width=True):
             if s_name.strip() and s_fee > 0:
+                st.session_state.cart_items.append({
+                    'code': 'SERVICE', 'name': s_name.strip(), 'qty': 1,
+                    'price': s_fee, 'total': s_fee
+                })
+                st.success("خدمت به فاکتور اضافه شد. برای نهایی‌سازی به تب «سبد خرید» بروید.")
+            else:
+                st.error("شرح و مبلغ خدمات الزامی است.")
+
+    # ------------------ تب سبد خرید و تسویه ------------------
+    with tab_cart:
+        if not st.session_state.cart_items:
+            st.info("🛒 سبد خرید شما خالی است. لطفاً از تب‌های محصولات یا خدمات، مواردی را اضافه کنید.")
+        else:
+            st.markdown("### 📋 اقلام فاکتور شما:")
+            for idx, item in enumerate(st.session_state.cart_items):
+                c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+                c1.markdown(f"**{item['name']}**")
+                c2.markdown(f"{item['qty']} عدد")
+                c3.markdown(f"{item['total']:,.0f} تومان")
+                if c4.button("❌", key=f"del_cart_{idx}", help="حذف از فاکتور"):
+                    st.session_state.cart_items.pop(idx)
+                    st.rerun()
+            
+            cart_total = sum(i['total'] for i in st.session_state.cart_items)
+            st.markdown(f"**جمع مبلغ اقلام:** {cart_total:,.0f} تومان")
+            st.markdown("---")
+
+            st.markdown("### 👤 اطلاعات مشتری و نهایی‌سازی")
+            vip_search_q = st.text_input("⌨️ جستجوی سریع مشتری قدیمی (نام یا موبایل):", key="pos_vip_search")
+            if vip_search_q and vip_search_q != st.session_state.get("pos_last_search", ""):
+                st.session_state["pos_last_search"] = vip_search_q
+                if not vip_df.empty:
+                    match = vip_df[
+                        vip_df['customer_phone'].astype(str).str.contains(vip_search_q, case=False, na=False) |
+                        vip_df['customer_name'].astype(str).str.contains(vip_search_q, case=False, na=False)
+                    ]
+                    if not match.empty:
+                        st.session_state["pos_name"] = str(match.iloc[0]['customer_name'])
+                        st.session_state["pos_phone"] = str(match.iloc[0]['customer_phone'])
+
+            cc1, cc2 = st.columns(2)
+            with cc1: 
+                c_name = st.text_input("نام مشتری", value=st.session_state.get("pos_name", ""), key="pos_cname")
+            with cc2:
+                c_phone = st.text_input("موبایل", value=st.session_state.get("pos_phone", ""), key="pos_cphone")
+                mobile_hint(c_phone)
+
+            car_opt = st.selectbox("مدل ماشین", CAR_MODELS + ["سایر (تایپ دستی)"])
+            c_car = st.text_input("لطفاً نام خودرو را وارد کنید:") if car_opt == "سایر (تایپ دستی)" else car_opt
+            
+            st.markdown("---")
+            ci1, ci2 = st.columns(2)
+            with ci1:
+                f_install = st.number_input("اجرت نصب کلی (تومان) - روی کل فاکتور", min_value=0, step=10000, value=0)
+            with ci2:
+                f_discount = st.number_input("تخفیف کلی (تومان) - روی کل فاکتور", min_value=0, max_value=cart_total+f_install, step=10000, value=0)
+
+            s_staff = st.selectbox("👷‍♂️ ثبت به نام پرسنل:", staff_options) if st.session_state.user_role == "Admin" else st.session_state.user_name
+
+            final_bill = cart_total + f_install - f_discount
+            st.markdown(f"<div class='metric-box'>💰 جمع کل قابل پرداخت: {final_bill:,.0f} تومان</div>", unsafe_allow_html=True)
+
+            if st.button("✅ ثبت نهایی فاکتور", use_container_width=True, type="primary"):
                 now_dt = iran_naive()
                 now_str = jalali_str(now_dt)
-
+                
                 try:
                     with engine.begin() as conn:
+                        # 1. چک کردن موجودی کل سبد قبل از هر عملیاتی
+                        for item in st.session_state.cart_items:
+                            if item['code'] != 'SERVICE':
+                                curr_stock = conn.execute(text("SELECT stock FROM products WHERE code=:c"), {"c": item['code']}).scalar()
+                                if curr_stock is None or curr_stock < item['qty']:
+                                    raise Exception(f"موجودی کالای «{item['name']}» کافی نیست!")
+
+                        # 2. محاسبه پورسانت
                         staff_rate = 0
-                        if s_staff_srv != "ادمین (بدون پورسانت)":
-                            s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff_srv}).fetchone()
+                        if s_staff != "ادمین (بدون پورسانت)":
+                            s_res = conn.execute(text("SELECT commission_rate FROM staff WHERE name=:n"), {"n": s_staff}).fetchone()
                             if s_res: staff_rate = s_res[0]
 
-                        conn.execute(text("""
-                            INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp, customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
-                            VALUES ('SERVICE', :n, 0, 0, :sd, :ts, :cn, :cp, :cm, :i, :i, :sn, :sc, 0)
-                        """), {"n": s_name.strip(), "sd": now_str, "ts": str(now_dt), "cn": s_cname, "cp": s_cphone, "cm": s_ccar,
-                               "i": s_fee, "sn": s_staff_srv, "sc": s_fee * (staff_rate / 100.0)})
+                        # 3. درج رکوردهای فروش
+                        first_item = True
+                        for item in st.session_state.cart_items:
+                            inst_fee = f_install if first_item else 0
+                            disc = f_discount if first_item else 0
+                            first_item = False
+                            
+                            if item['code'] != 'SERVICE':
+                                conn.execute(text("UPDATE products SET stock = stock - :q WHERE code = :c"), {"q": item['qty'], "c": item['code']})
+                                pp = conn.execute(text("SELECT purchase_price FROM products WHERE code=:c"), {"c": item['code']}).scalar()
+                                item_net_prof = (item['price'] - pp) * item['qty'] + inst_fee - disc
+                            else:
+                                item_net_prof = item['total'] + inst_fee - disc
+                                
+                            staff_comm = float(item_net_prof * (staff_rate / 100)) if item_net_prof > 0 else 0
 
+                            conn.execute(text("""
+                                INSERT INTO sales (product_code, name, quantity, sale_price, sale_date, timestamp,
+                                customer_name, customer_phone, car_model, install_fee, net_profit, staff_name, staff_commission, discount)
+                                VALUES (:pc, :n, :q, :sp, :sd, :ts, :cn, :cp, :cm, :i, :np, :sn, :sc, :d)
+                            """), {
+                                "pc": item['code'], "n": item['name'], "q": item['qty'], "sp": item['price'], "sd": now_str,
+                                "ts": str(now_dt), "cn": c_name or "مشتری نقدی", "cp": c_phone, "cm": c_car,
+                                "i": inst_fee, "np": item_net_prof, "sn": s_staff, "sc": staff_comm, "d": disc
+                            })
+
+                    # 4. آماده‌سازی فاکتور PDF
                     st.session_state.last_invoice = {
-                        "date": now_str, "c_name": s_cname or "نقدی", "c_phone": s_cphone, "c_car": s_ccar,
-                        "p_name": s_name.strip(), "qty": 0, "price": 0, "install": s_fee, "discount": 0,
-                        "total": s_fee, "staff": s_staff_srv
+                        "date": now_str, "c_name": c_name or "نقدی", "c_phone": c_phone, "c_car": c_car,
+                        "items": st.session_state.cart_items.copy(),
+                        "install": f_install, "discount": f_discount, "total": final_bill, "staff": s_staff,
+                        "p_name": "فاکتور چندقلمی", "qty": sum(i['qty'] for i in st.session_state.cart_items), "price": 0
                     }
+                    st.session_state.cart_items = [] # پاک کردن سبد
+                    st.session_state["pos_name"] = ""
+                    st.session_state["pos_phone"] = ""
+                    st.session_state["pos_last_search"] = ""
                     refresh_caches("sales")
-                    st.success("خدمات ثبت شد!")
+                    st.success("فروش با موفقیت ثبت شد و از انبار کسر گردید!")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"خطا: {e}")
-            else:
-                st.error("شرح و مبلغ الزامی است.")
 
-    with tab_refund:
+                except Exception as e:
+                    if "موجودی" in str(e):
+                        st.error(str(e))
+                    else:
+                        st.error(f"خطا در ثبت فروش: {e}")
+
+    # ------------------ تب ابطال و مرجوعی ------------------
+    with tab_ref:
         if st.session_state.user_role == "Admin":
             st.markdown("🔍 **ابتدا کالای مرجوعی را پیدا کنید:**")
             ref_method = st.radio("روش جستجوی کالا برای مرجوعی:", ("دوربین (اسکنر خودکار)", "کیبورد / بارکدخوان فیزیکی", "جستجوی نام کالا"), key="ref_method", horizontal=True)
@@ -968,7 +916,8 @@ elif choice == "🛒 ثبت فروش / خدمات":
                         with engine.begin() as conn:
                             sale_rec = conn.execute(text("SELECT product_code, quantity FROM sales WHERE id=:i AND product_code=:c"), {"i": refund_id, "c": ref_code}).mappings().fetchone()
                             if sale_rec:
-                                conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
+                                if sale_rec['product_code'] != 'SERVICE':
+                                    conn.execute(text("UPDATE products SET stock = stock + :q WHERE code=:c"), {"q": sale_rec['quantity'], "c": sale_rec['product_code']})
                                 conn.execute(text("DELETE FROM sales WHERE id=:i"), {"i": refund_id})
                                 refresh_caches("all")
                                 st.success("فاکتور باطل شد و موجودی به انبار بازگشت.")
@@ -980,10 +929,11 @@ elif choice == "🛒 ثبت فروش / خدمات":
         else:
             st.error("فقط صاحب مغازه (ادمین) دسترسی دارد.")
 
+    # ------------------ نمایش فاکتور نهایی پس از ثبت ------------------
     if st.session_state.last_invoice:
         inv = st.session_state.last_invoice
         st.markdown("---")
-        st.subheader("🧾 فاکتور مشتری")
+        st.subheader("🧾 فاکتور صادر شده")
 
         shop_name = get_setting("shop_name", "فروشگاه لوازم جانبی خودرو")
         shop_address = get_setting("shop_address", "")
@@ -995,7 +945,7 @@ elif choice == "🛒 ثبت فروش / خدمات":
         thermal_buffer = generate_thermal_pdf_invoice(inv, shop_name, shop_address, shop_phone, invoice_footer)
         
         if not has_font:
-            st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد. راهنمای رفع در فایل README آمده است.")
+            st.warning("⚠️ فونت فارسی (Vazirmatn.ttf) در پروژه پیدا نشد؛ متن فاکتور PDF ممکن است فارسی را درست نمایش ندهد.")
         
         c_btn1, c_btn2 = st.columns(2)
         with c_btn1:
@@ -1007,15 +957,23 @@ elif choice == "🛒 ثبت فروش / خدمات":
                                 file_name=f"Invoice_{inv['c_phone'] or 'cash'}_Thermal.pdf", mime="application/pdf",
                                 type="primary", use_container_width=True)
 
-        dis_text = f"\n🎁 تخفیف اعمال شده: {inv['discount']:,} تومان" if inv['discount'] > 0 else ""
+        dis_text = f"\n🎁 تخفیف کل: {inv['discount']:,} تومان" if inv['discount'] > 0 else ""
+        inst_text = f"\n🔧 اجرت نصب کل: {inv['install']:,} تومان" if inv['install'] > 0 else ""
+        
+        items_str = ""
+        if 'items' in inv:
+            for itm in inv['items']:
+                items_str += f"📦 {itm['name']} ({itm['qty']} عدد) - {itm['total']:,} ت\n"
+        
         inv_text = (f"🧾 {shop_name}\nتاریخ: {inv['date']}\n👤 مشتری: {inv['c_name']}\n🚗 خودرو: {inv['c_car']}\n"
-                    f"👷‍♂️ مسئول: {inv['staff']}\n-------------------\n📦 شرح: {inv['p_name']}\n🔢 تعداد: {inv['qty']}\n"
-                    f"💵 فی: {inv['price']:,} تومان\n🔧 اجرت: {inv['install']:,} تومان{dis_text}\n-------------------\n"
+                    f"👷‍♂️ مسئول: {inv['staff']}\n-------------------\n{items_str}"
+                    f"-------------------{inst_text}{dis_text}\n"
                     f"💰 جمع کل: {inv['total']:,} تومان\n✨ {invoice_footer} ✨")
+        
         safe_inv_html = html.escape(inv_text).replace(chr(10), '<br>')
         st.markdown(f"<div class='invoice-box'>{safe_inv_html}</div>", unsafe_allow_html=True)
         enc = urllib.parse.quote(inv_text)
-        w_link = f"https://wa.me/98{inv['c_phone'][1:]}?text={enc}" if inv['c_phone'].startswith('09') else f"https://wa.me/?text={enc}"
+        w_link = f"https://wa.me/98{inv['c_phone'][1:]}?text={enc}" if inv['c_phone'] and inv['c_phone'].startswith('09') else f"https://wa.me/?text={enc}"
         t_link = f"https://t.me/share/url?url={enc}"
         b1, b2, b3 = st.columns(3)
         with b1: st.markdown(f"<a href='{w_link}' target='_blank'><button style='width:100%; padding:10px; background-color:#25D366; color:white; border:none;'>🟢 ارسال واتس‌اپ</button></a>", unsafe_allow_html=True)
